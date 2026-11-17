@@ -1,0 +1,22 @@
+[tools]
+jq = '1.8.1'
+pre-commit = '4.7.0'
+shellcheck = '0.11.0'
+shfmt = '3.14.1'
+typos = '1.51.1'
+
+[tasks.marketplace]
+description = "Generate .claude-plugin/marketplace.json from skills/"
+run = "scripts/marketplace.sh"
+
+[tasks.lint]
+description = "Run every check (the Lint workflow runs the same task)"
+run = [
+  "shellcheck install.sh scripts/*.sh",
+  "shfmt --diff install.sh scripts/*.sh",
+  "typos",
+  "scripts/check-skills.sh",
+  "scripts/marketplace.sh --check",
+  # The claude CLI is not installed in CI.
+  "if command -v claude > /dev/null; then claude plugin validate .; fi",
+]
