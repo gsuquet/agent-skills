@@ -56,3 +56,5 @@ find the facts.
 
 - Before recommending a location, name or convention, check the user's instruction files
   (AGENTS.md / CLAUDE.md chain) for an existing one.
+- Don't assume the issue tracker is the forge: ask which trackers the user works with before
+  designing detection.
