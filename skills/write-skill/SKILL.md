@@ -1,6 +1,8 @@
 ---
 name: write-skill
 description: Write or change an agent skill in the agent-skills repository so that it works in Claude Code, Antigravity and other agents that read SKILL.md. Use when the user asks to add, edit, split or review a skill there.
+metadata:
+  version: 0.1.0
 ---
 
 # Write a skill

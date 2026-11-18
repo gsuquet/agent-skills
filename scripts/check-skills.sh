@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check that every skill follows the Agent Skills format that all supported agents read.
-# Also checks the links between skills, and the tracked files against a private word list, kept
-# outside the repository.
+# Also checks the links between skills, the skill versions, and the tracked files against a private
+# word list, kept outside the repository.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,6 +12,9 @@ fail() {
     echo "$1: $2" >&2
     errors=$((errors + 1))
 }
+
+# shellcheck source=scripts/lib.sh
+source "${REPO_ROOT}/scripts/lib.sh"
 
 for dir in "${REPO_ROOT}"/skills/*/; do
     name="$(basename "${dir}")"
@@ -37,6 +40,13 @@ for dir in "${REPO_ROOT}"/skills/*/; do
     [[ -n "${description}" && "${description}" != ">"* && "${description}" != "|"* ]] ||
         fail "${rel}" "description must be a non-empty single line"
     [[ ${#description} -le 1024 ]] || fail "${rel}" "description longer than 1024 characters"
+
+    version="$(skill_version "${file}")"
+    if [[ -z "${version}" ]]; then
+        fail "${rel}" "metadata.version is required"
+    elif ! [[ "${version}" =~ ${SEMVER_RE} ]]; then
+        fail "${rel}" "metadata.version '${version}' is not a semantic version (MAJOR.MINOR.PATCH)"
+    fi
 
     # install.sh installs linked skills: each link must name an existing skill.
     while IFS= read -r linked; do

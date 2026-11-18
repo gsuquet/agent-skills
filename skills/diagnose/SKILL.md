@@ -1,6 +1,8 @@
 ---
 name: diagnose
 description: Diagnose a bug, regression, flaky test, Terraform drift or failing Kubernetes workload by first building a check that reproduces it. Use when the user says debug or diagnose, or reports something broken, failing or slow.
+metadata:
+  version: 0.1.0
 ---
 
 # Diagnose

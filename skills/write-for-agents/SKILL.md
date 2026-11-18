@@ -1,6 +1,8 @@
 ---
 name: write-for-agents
 description: Write or review any text an agent reads, so that every run takes the same path through it. Use when writing or editing a skill, an AGENTS.md or CLAUDE.md, or a doc an agent reaches through a link.
+metadata:
+  version: 0.1.0
 ---
 
 # Write for agents
