@@ -54,10 +54,11 @@ one moment.
 7. **Report.** Read [assets/report.md](assets/report.md) and fill it exactly. Done when the report
    is printed.
 8. **Log feedback.** For each candidate whose target is a skill, run
-   `scripts/feedback.sh append <skill> "<what went wrong>" <session id or PR link>`. Exit 4 means
-   the skill is not in the skills repository: skip it. Exit 3 means the skills are not a clone:
-   print `Not written:` and the line instead. Done when each such candidate has its line appended,
-   skipped or printed.
+   `scripts/feedback.sh append <skill> "<what went wrong>" <link>`. `<link>` is the URL of the
+   PR, MR or commit that showed the problem, or `-`: never a session URL or a local path, which the
+   script refuses. Exit 4 means the skill is not in the skills repository: skip it. Exit 3 means
+   the skills are not a clone: print `Not written:` and the line instead. Done when each such
+   candidate has its line appended, skipped or printed.
 9. **Stop.** End the turn after step 8, with every candidate still unapplied: the user picks the
    ones to apply, in a later turn or session.
 

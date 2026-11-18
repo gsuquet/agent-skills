@@ -36,7 +36,7 @@ a section that has nothing. Redact every secret as `<REDACTED>`.
 
 ## Feedback lines
 
-- `<skill>`: `<what went wrong>` | `<session id or PR link>`
+- `<skill>`: `<what went wrong>` | `<PR, MR or commit URL, or ->`
 ````
 
 - One candidate block per candidate, numbered in the rank order of step 6.
