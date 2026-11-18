@@ -6,7 +6,7 @@ usage() {
     cat << 'EOF2'
 Usage:
   session-moments.sh list [<dir>]
-  session-moments.sh moments [--search-run <n>] [--pattern <regex>] <session.jsonl>
+  session-moments.sh moments [--search-run <n>] <session.jsonl>
   session-moments.sh -h | --help
 
 Reads Claude Code session logs (JSON Lines, schema undocumented). Writes nothing.
@@ -23,19 +23,22 @@ moments  One tab-separated line per moment, in log order:
            <timestamp>  RETRY       <tool> x<n> <input>          (same tool and input as a failed
                                                                  call, or as the call just before)
            <timestamp>  SEARCH      x<n> <first input> .. <last input>
-           <timestamp>  CORRECTION  <user message>
+           <timestamp>  USER        <user message, 300 characters>
+             after: <end of the assistant text before it, 300 characters>
            <timestamp>  INTERRUPT   <user message>
          SEARCH: <n> search calls in a row (Grep, Glob, Read, LS, or a Bash grep, rg, find, fd,
          ls, cat, head, tail, tree), with no other tool call or user message between them.
-         CORRECTION: a message typed by the user that matches --pattern (case-insensitive).
-         Subagent logs have no user messages: CORRECTION is skipped there.
+         USER: every message typed by the user (not tool results nor notifications), with
+         each <pasted_content> body replaced by [pasted <n> chars] and line breaks shown as \n.
+         Its "after:" line holds the end of the last assistant text before it, or "-". Read
+         the two together to tell a correction from an agreement: no keyword decides it.
+         Subagent logs have no user messages: USER is skipped there.
 
 Options:
   --search-run <n>   Shortest search run to print (default: 10)
-  --pattern <regex>  Correction pattern, Oniguruma syntax (default: see DEFAULT_PATTERN)
 
 Every printed text is redacted (tokens, keys, passwords, long opaque strings) and cut to 200
-characters. A line that is not valid JSON (a session still being written) is skipped.
+characters, 300 for USER and after. A line that is not valid JSON (a session still being written) is skipped.
 
 Exit codes:
   0  success, even with no moment
@@ -46,8 +49,6 @@ Exit codes:
 EOF2
 }
 
-DEFAULT_PATTERN="^(no|nope|wrong|stop|wait|undo|revert)\\b|\\b(not what|that's not|that is not|i said|i asked|i told you|you should|you shouldn't|don't|do not|why did you|why are you|you forgot|you missed|instead|incorrect|mistake|still (fails|broken|wrong))\\b"
-
 die() {
     local code="$1"
     shift
@@ -57,7 +58,8 @@ die() {
 
 command -v jq > /dev/null || die 2 "jq not found: install jq 1.6 or later"
 
-# Shared jq helpers: text of a message content, redaction, one-line cut to 200 characters.
+# Shared jq helpers: text of a message content, redaction, cuts to 200 or 300 characters.
+# shellcheck disable=SC2016 # jq code: $ is jq syntax, not a shell expansion.
 JQ_LIB='
 def text:
   if type == "string" then .
@@ -71,7 +73,11 @@ def redact:
   | gsub("(gh[pousr]_|github_pat_|glpat-|sk-|xox[abprs]-|AKIA|ASIA|AIza)[A-Za-z0-9_-]{10,}"; "<REDACTED>")
   | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"; "<REDACTED>")
   | gsub("[A-Za-z0-9+_=-]{40,}"; "<REDACTED>");
-def clip: redact | gsub("\\s+"; " ") | if length > 200 then .[0:200] + "..." else . end;
+def cut($n): if length > $n then .[0:$n] + "..." else . end;
+def clip: redact | gsub("\\s+"; " ") | cut(200);
+def unpaste:
+  gsub("<pasted_content[^>]*>(?<b>[\\s\\S]*?)</pasted_content[^>]*>"; "[pasted \(.b | length) chars]")
+  | gsub("<pasted_content[^>]*>(?<b>[\\s\\S]*)$"; "[pasted \(.b | length) chars]");
 '
 
 cmd_list() {
@@ -109,17 +115,12 @@ cmd_list() {
 }
 
 cmd_moments() {
-    local search_run=10 pattern="${DEFAULT_PATTERN}" file=""
+    local search_run=10 file=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --search-run)
                 [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || die 1 "--search-run needs a positive integer"
                 search_run="$2"
-                shift 2
-                ;;
-            --pattern)
-                [[ -n "${2:-}" ]] || die 1 "--pattern needs a regex"
-                pattern="$2"
                 shift 2
                 ;;
             -*) die 1 "unknown option: $1" ;;
@@ -137,7 +138,7 @@ cmd_moments() {
     local subagent=false
     [[ "${file}" != */subagents/* ]] || subagent=true
 
-    jq -nrR --argjson run "${search_run}" --arg pattern "${pattern}" --argjson subagent "${subagent}" \
+    jq -nrR --argjson run "${search_run}" --argjson subagent "${subagent}" \
         "${JQ_LIB}"'
         def need($r; $path; $name):
           if ($r | getpath($path)) == null
@@ -153,10 +154,13 @@ cmd_moments() {
           | .streak = {n: 0};
 
         reduce (inputs | fromjson? | objects) as $r (
-          {calls: {}, seen: {}, failed: {}, lastkey: null, streak: {n: 0}, out: [], records: 0, users: 0, origins: 0};
+          {calls: {}, seen: {}, failed: {}, lastkey: null, said: null, streak: {n: 0}, out: [], records: 0, users: 0, origins: 0};
           .records += 1
           | if $r.type == "assistant" then
               need($r; ["timestamp"]; ".timestamp") | need($r; ["message", "content"]; ".message.content")
+              # The last text the user saw before typing: the "after:" line of the next USER moment.
+              | ($r.message.content | text) as $said
+              | (if ($said | test("\\S")) then .said = $said else . end)
               | reduce ($r.message.content | if type == "array" then .[] else empty end
                         | select(type == "object" and .type == "tool_use")) as $c (.;
                   need($c; ["id"]; "tool_use.id") | need($c; ["name"]; "tool_use.name")
@@ -191,14 +195,18 @@ cmd_moments() {
                   flush | .out += [[$r.timestamp, "INTERRUPT", ($msg | clip)]]
                 elif $r.origin.kind? == "human" then
                   flush
-                  | if ($msg | test($pattern; "i")) then .out += [[$r.timestamp, "CORRECTION", ($msg | clip)]] else . end
+                  | .out += [[$r.timestamp, "USER",
+                             ($msg | unpaste | redact | gsub("^\\s+|\\s+$"; "") | cut(300)),
+                             ((.said // "-") | redact | gsub("\\s+"; " ") | gsub("^ | $"; "")
+                              | if length > 300 then "..." + .[-300:] else . end)]]
                 else . end
             else . end)
         | flush
         | if .records == 0 then error("no JSON record in the file") else . end
         | if .users > 0 and .origins == 0 and ($subagent | not)
           then error("no user record has the field .origin (used to find messages typed by the user)") else . end
-        | .out | sort_by(.[0]) | .[] | @tsv' < "${file}"
+        | .out | sort_by(.[0]) | .[]
+        | if .[1] == "USER" then (.[0:3] | @tsv) + "\n  after: " + .[3] else @tsv end' < "${file}"
 }
 
 case "${1:-}" in

@@ -25,9 +25,12 @@ one moment.
    script applies, its output is read.
 3. **Extract moments.** Read the whole session and list every moment: a correction by the user, a
    failed tool call, a retry of the same call, a long search (many reads or searches before the
-   agent found a file or a fact), a wrong assumption the agent later reversed. Number them M1,
-   M2..., with the timestamp or turn and a quote of one line at most, redacted. Done when the
-   session is read to its end and each moment has a number.
+   agent found a file or a fact), a wrong assumption the agent later reversed. A user message is a
+   correction when it rejects, changes or adds to what the agent proposed or did just before it:
+   read each `USER` line of the script against its `after:` line, and the session around it when
+   300 characters are not enough. Number the moments M1, M2..., with the timestamp or turn and a
+   quote of one line at most, redacted. Done when the session is read to its end and each moment
+   has a number.
 4. **Scan.** Read, judging each against the checklist:
    - the repo's `AGENTS.md` / `CLAUDE.md` and the files they import;
    - the user-level instruction file (Claude Code: `~/.claude/CLAUDE.md` and its `@` imports);
