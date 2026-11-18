@@ -32,6 +32,7 @@ reached by a link. Write it so that the agent follows the same process on every 
   line, `@AGENTS.md`, and nothing else, so every agent reads the same rules.
 - Keep an instruction file to what the agent cannot find by looking: conventions, reasons, gotchas.
   Link each longer doc with one line that says when to read it.
+- Read [references/knowledge-placement.md](references/knowledge-placement.md) when you decide where a durable fact goes: a repository doc, a hub instruction file, a wiki page, a handoff, review rules or a check.
 
 ## Gotchas
 
