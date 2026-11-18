@@ -25,7 +25,8 @@ The result depends only on ${BASE_REF} and the branch, so running it again is sa
 raises a skill's version once. Commit a feat or breaking change, then run it again: uncommitted
 changes count only as a patch. A skill that has no version on ${BASE_REF} keeps its version.
 
-Prints "<skill>: <old> -> <new> (<level>)" when it changes the version.
+Prints "<skill>: <old> -> <new> (<level>)" when it changes the version, then regenerates
+.claude-plugin/marketplace.json (scripts/marketplace.sh), which carries the version.
 
 Options:
   --dry-run  print the new version, do not edit SKILL.md
@@ -155,6 +156,7 @@ if [[ "${dry_run}" == false ]]; then
         { print }
     ' "${file}" > "${tmp}"
     cat "${tmp}" > "${file}"
+    "${REPO_ROOT}/scripts/marketplace.sh"
 fi
 suffix=""
 [[ "${dry_run}" == false ]] || suffix=", dry run: SKILL.md not changed"
