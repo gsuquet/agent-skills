@@ -5,7 +5,7 @@ set -euo pipefail
 usage() {
     cat << 'EOF2'
 Usage:
-  feedback.sh append <skill> <what went wrong> <session id or PR link>
+  feedback.sh append <skill> <what went wrong> <link>
   feedback.sh rework [--min <n>]
   feedback.sh -h | --help
 
@@ -16,20 +16,29 @@ qualifies, a copy or a plugin cache does not.
 append  Appends one line to <repo>/skills/<skill>/FEEDBACK.md, and creates the file with a
         one-line header when it is missing:
           YYYY-MM-DD | <metadata.version of the skill> | <what went wrong> | <link>
-        Prints the appended line.
+        Prints the appended line. FEEDBACK.md is public: <link> is '-' or the https URL of a
+        PR/MR or a commit on a host of FEEDBACK_LINK_HOSTS. Never a session URL or a local path.
+        Self-hosted GitLab:
+          FEEDBACK_LINK_HOSTS="github.com gitlab.com gitlab.example.com" \
+            feedback.sh append describe-change "step 4 printed no command" \
+            https://gitlab.example.com/example-group/repo/-/merge_requests/12
 rework  Prints one tab-separated line per skill with <n> or more FEEDBACK lines (default: 3)
         at its current metadata.version, that is since its last version bump:
           <skill>  <version>  <lines>
 
+Environment:
+  FEEDBACK_LINK_HOSTS  Hosts allowed in <link>, separated by spaces or commas
+                       (default: "github.com gitlab.com")
+
 Exit codes:
   0  success
-  1  usage error, or a field holds '|' or a line break
+  1  usage error, a field holds '|' or a line break, or <link> is not '-' or an allowed URL
   3  not a clone of the skills repository (the skill is installed as a copy or a plugin)
   4  unknown skill, or SKILL.md has no metadata.version
 EOF2
 }
 
-HEADER="# date | version | what went wrong | session or PR link"
+HEADER="# date | version | what went wrong | PR, MR or commit link"
 
 die() {
     local code="$1"
@@ -60,6 +69,20 @@ skill_version() {
     ' "$1"
 }
 
+# FEEDBACK.md is public: accept '-' or an https URL on an allowed host, nothing else.
+check_link() {
+    local link="$1" hosts="${FEEDBACK_LINK_HOSTS:-github.com gitlab.com}" host allowed
+    [[ "${link}" != "-" ]] || return 0
+    [[ "${link}" =~ ^https://([A-Za-z0-9.-]+)/[^[:space:]]+$ ]] ||
+        die 1 "link must be '-' or an https URL of a PR/MR or commit: ${link}"
+    host="$(tr '[:upper:]' '[:lower:]' <<< "${BASH_REMATCH[1]}")"
+    # Split on spaces and commas.
+    for allowed in ${hosts//,/ }; do
+        [[ "${host}" != "$(tr '[:upper:]' '[:lower:]' <<< "${allowed}")" ]] || return 0
+    done
+    die 1 "link host '${host}' is not in FEEDBACK_LINK_HOSTS (${hosts})"
+}
+
 cmd_append() {
     [[ $# -eq 3 ]] || die 1 "append needs <skill> <what went wrong> <link>"
     local skill="$1" what="$2" link="$3" dir version file field line
@@ -67,6 +90,7 @@ cmd_append() {
         [[ -n "${field}" ]] || die 1 "empty field"
         [[ "${field}" != *"|"* && "${field}" != *$'\n'* ]] || die 1 "a field holds '|' or a line break: ${field}"
     done
+    check_link "${link}"
     dir="$(skills_dir)"
     [[ -f "${dir}/${skill}/SKILL.md" ]] || die 4 "no skill '${skill}' in ${dir}"
     version="$(skill_version "${dir}/${skill}/SKILL.md")"
