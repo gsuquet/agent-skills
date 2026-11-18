@@ -10,7 +10,7 @@ Prints the path where the handoff document goes, and creates its directory:
   1. $HANDOFF_DIR/<repo>-<yyyymmdd-hhmm>.md, when HANDOFF_DIR is set;
   2. <dir>/handoffs/<repo>-<yyyymmdd-hhmm>.md, where <dir> is the nearest ancestor of the git root
      (or of the current directory, itself included, outside a repository) that holds a CLAUDE.md
-     or an AGENTS.md;
+     or an AGENTS.md. The walk stops below $HOME: $HOME and its ancestors never count;
   3. ${TMPDIR:-/tmp}/handoff-<repo>-<yyyymmdd-hhmm>.md otherwise.
 <repo> is the name of the git root folder, or of the current directory outside a repository.
 EOF
@@ -49,7 +49,13 @@ if [[ -n "${HANDOFF_DIR:-}" ]]; then
     exit 0
 fi
 
-while :; do
+# $HOME and its ancestors never count: a stray ~/CLAUDE.md must not collect every handoff.
+home="$(cd "${HOME}" 2> /dev/null && pwd -P || echo "${HOME}")"
+above_home() {
+    [[ "$1" == / || "$1" == "${home}" || "${home}" == "$1/"* ]]
+}
+
+while ! above_home "${dir}"; do
     if [[ -f "${dir}/CLAUDE.md" || -f "${dir}/AGENTS.md" ]]; then
         mkdir -p "${dir}/handoffs" || {
             echo "error: cannot create '${dir}/handoffs'" >&2
@@ -58,7 +64,6 @@ while :; do
         echo "${dir%/}/handoffs/${repo}-${stamp}.md"
         exit 0
     fi
-    [[ "${dir}" != / ]] || break
     dir="$(dirname "${dir}")"
 done
 
