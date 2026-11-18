@@ -23,6 +23,8 @@ skill format.
 ---
 name: <name>            # equals the folder name: kebab-case, 64 characters max
 description: <one line> # what the skill does, then "Use when ...": 1024 characters max
+metadata:
+  version: 0.1.0        # semantic version: a new skill starts at 0.1.0
 ---
 ```
 
@@ -40,9 +42,18 @@ description: <one line> # what the skill does, then "Use when ...": 1024 charact
   `install.sh` installs the linked skills too, and lint fails on a link to a missing skill.
 - Do not hard-code a path of one machine or one agent: use paths relative to the skill folder.
 - Never write a client or employer name, a secret, or personal data: the repository is public.
+- Keep the evidence for improving a skill in `skills/<name>/FEEDBACK.md`, one line per correction:
+  `YYYY-MM-DD | <version> | <what went wrong> | <session or PR link>`. The run-retro skill
+  (`../run-retro/SKILL.md`) appends these lines. A change to a skill cites, in its commit message
+  and PR description, the FEEDBACK lines it addresses.
 
 ## Finish
 
-1. Run `mise run marketplace` to add the skill to `.claude-plugin/marketplace.json`.
+1. Update `.claude-plugin/marketplace.json`:
+   - New skill: run `mise run marketplace`.
+   - Changed skill: run `mise run bump -- <name>` (or `scripts/bump.sh <name>`), which raises
+     `metadata.version` and regenerates the marketplace.
 2. Run `mise run lint`.
 3. Try the skill: `./install.sh --agent claude <name>`, then start a new session.
+4. Changed skill, after you commit a `feat` or a breaking change: run `mise run bump -- <name>`
+   again and commit the result. Uncommitted changes count only as a patch.
