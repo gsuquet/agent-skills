@@ -14,9 +14,10 @@ installable in Claude Code (plugin marketplace) and in other agents (`install.sh
    files, commit messages or PR text. `scripts/check-skills.sh` checks a private word list.
 2. Follow the `write-skill` skill (`skills/write-skill/SKILL.md`) to add or change a skill.
 3. Do not edit `.claude-plugin/marketplace.json`: run `mise run marketplace`.
-4. Run `mise run lint` before you commit. The `Lint` workflow runs the same task.
-5. Write commit messages and PR titles as Conventional Commits (`feat(write-skill): ...`).
-6. Pin each dependency to an exact version: a commit SHA for GitHub Actions and pre-commit hooks.
+4. Bump the skill's version (`mise run bump -- <skill>`) in every change to a skill; lint enforces it.
+5. Run `mise run lint` before you commit. The `Lint` workflow runs the same task.
+6. Write commit messages and PR titles as Conventional Commits (`feat(write-skill): ...`).
+7. Pin each dependency to an exact version: a commit SHA for GitHub Actions and pre-commit hooks.
 
 ## Push and merge limits
 
