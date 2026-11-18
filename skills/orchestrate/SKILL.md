@@ -46,6 +46,7 @@ reaches the user. Subagents own the implementation, the research and the reads a
     when every durable fact is placed or proposed.
 11. **End.** Stop when every task is verified and integrated. When the session ends before that,
     run [handoff](../handoff/SKILL.md). Done when the work is integrated or the handoff is written.
+    After a long or corrected session, suggest [run-retro](../run-retro/SKILL.md) to the user.
 
 When the agent cannot launch subagents, run steps 4 to 7 yourself, one task at a time: write the
 brief, do the work, write the report in the brief's Report format, then verify it as in step 7.

@@ -1,7 +1,7 @@
 # Categories
 
 Match each moment to every category whose trigger it meets. "Targets" names the rows of
-[targets.md](targets.md) a candidate of that category usually takes; step 5 of `SKILL.md` still
+[knowledge-placement.md](../../write-for-agents/references/knowledge-placement.md) a candidate of that category usually takes; step 5 of `SKILL.md` still
 picks the first matching row.
 
 ## Navigation
