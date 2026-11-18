@@ -5,6 +5,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BASE_REF="origin/main"
 FORBIDDEN_WORDS="${AGENT_SKILLS_FORBIDDEN_WORDS:-${XDG_CONFIG_HOME:-${HOME}/.config}/agent-skills/forbidden-words}"
 errors=0
 
@@ -15,6 +16,23 @@ fail() {
 
 # shellcheck source=scripts/lib.sh
 source "${REPO_ROOT}/scripts/lib.sh"
+
+# A changed skill must carry a higher version than on BASE_REF. "changed" compares the working tree
+# with the merge base, so commits that BASE_REF gained since the branch started do not count.
+base_commit=""
+if ! git -C "${REPO_ROOT}" rev-parse --verify --quiet "${BASE_REF}^{commit}" > /dev/null; then
+    echo "notice: no ${BASE_REF}, skill version bumps not checked (fetch it, or clone with full history)" >&2
+elif ! base_commit="$(git -C "${REPO_ROOT}" merge-base HEAD "${BASE_REF}" 2> /dev/null)"; then
+    echo "notice: no merge base with ${BASE_REF}, skill version bumps not checked (shallow clone?)" >&2
+    base_commit=""
+fi
+changed_skills=""
+if [[ -n "${base_commit}" ]]; then
+    changed_skills="$({
+        git -C "${REPO_ROOT}" diff --name-only "${base_commit}" -- skills/
+        git -C "${REPO_ROOT}" ls-files --others --exclude-standard -- skills/
+    } | cut -d / -f 2 | sort -u)"
+fi
 
 for dir in "${REPO_ROOT}"/skills/*/; do
     name="$(basename "${dir}")"
@@ -46,6 +64,12 @@ for dir in "${REPO_ROOT}"/skills/*/; do
         fail "${rel}" "metadata.version is required"
     elif ! [[ "${version}" =~ ${SEMVER_RE} ]]; then
         fail "${rel}" "metadata.version '${version}' is not a semantic version (MAJOR.MINOR.PATCH)"
+    elif grep -qxF "${name}" <<< "${changed_skills}"; then
+        # A skill that is new on the branch, or had no version on BASE_REF yet, is exempt.
+        base_version="$(git -C "${REPO_ROOT}" show "${BASE_REF}:${rel}" 2> /dev/null | skill_version - || true)"
+        if [[ -n "${base_version}" ]] && ! version_gt "${version}" "${base_version}"; then
+            fail "${rel}" "skill changed since ${BASE_REF} but its version ${version} is not higher than ${base_version}: run 'mise run bump -- ${name}'"
+        fi
     fi
 
     # install.sh installs linked skills: each link must name an existing skill.
