@@ -26,6 +26,7 @@ die() {
     exit 1
 }
 
+# BEGIN shared:forge-detect
 # Host part of a git remote URL: git@host:path, ssh://user@host[:port]/path or https://host/path.
 remote_host() {
     local url="$1" host
@@ -44,6 +45,7 @@ remote_host() {
     esac
     [[ -n "${host}" ]] && echo "${host}"
 }
+# END shared:forge-detect
 
 [[ $# -gt 0 ]] || {
     usage >&2
