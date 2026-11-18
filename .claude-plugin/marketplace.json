@@ -12,6 +12,7 @@
       "description": "Every skill of this repository. Do not combine with the single-skill plugins.",
       "skills": [
         "./skills/interview",
+        "./skills/write-for-agents",
         "./skills/write-skill"
       ]
     },
@@ -21,6 +22,14 @@
       "description": "Interview the user in rounds of numbered questions, each with a recommended answer, until every decision of a plan, design or idea is settled, then end with a decision summary and wait for confirmation. Use only when the user asks to be grilled or interviewed, or to stress-test or challenge a plan, design or decision. Do not start it on your own for a task that merely needs planning.",
       "skills": [
         "./skills/interview"
+      ]
+    },
+    {
+      "name": "write-for-agents",
+      "source": "./",
+      "description": "Write or review any text an agent reads, so that every run takes the same path through it. Use when writing or editing a skill, an AGENTS.md or CLAUDE.md, or a doc an agent reaches through a link.",
+      "skills": [
+        "./skills/write-for-agents"
       ]
     },
     {
