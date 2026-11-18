@@ -11,6 +11,9 @@ usage() {
     cat << 'EOF'
 Usage: install.sh [options] (--all | <skill>...)
 
+Installing a skill also installs every skill it links to (a "](../<name>/SKILL.md)" link in its
+SKILL.md), recursively. --uninstall removes only the skills named.
+
 Options:
   -a, --agent AGENT  Target agent, repeatable (default: antigravity):
                        claude       ~/.claude/skills
@@ -43,6 +46,30 @@ list_skills() {
     local dir
     for dir in "${SKILLS_DIR}"/*/; do
         [[ -f "${dir}SKILL.md" ]] && basename "${dir}"
+    done
+}
+
+# Names of the skills that a skill's SKILL.md links to, one per line.
+linked_skills() {
+    grep -oE '\]\(\.\./[a-z0-9-]+/SKILL\.md\)' "${SKILLS_DIR}/$1/SKILL.md" |
+        sed -E 's#^\]\(\.\./([a-z0-9-]+)/SKILL\.md\)$#\1#' | sort -u || true
+}
+
+# Add the linked skills to SKILLS, recursively. Each skill appears once, so cycles end.
+add_linked_skills() {
+    local i=0 skill linked
+    while [[ ${i} -lt ${#SKILLS[@]} ]]; do
+        skill="${SKILLS[${i}]}"
+        while IFS= read -r linked; do
+            [[ -n "${linked}" ]] || continue
+            [[ -f "${SKILLS_DIR}/${linked}/SKILL.md" ]] ||
+                die "skill '${skill}' links to unknown skill '${linked}'"
+            if ! printf '%s\n' "${SKILLS[@]}" | grep -qxF -- "${linked}"; then
+                echo "adding ${linked}: linked from ${skill}" >&2
+                SKILLS+=("${linked}")
+            fi
+        done < <(linked_skills "${skill}")
+        i=$((i + 1))
     done
 }
 
@@ -139,6 +166,8 @@ fi
 for skill in "${SKILLS[@]}"; do
     [[ -f "${SKILLS_DIR}/${skill}/SKILL.md" ]] || die "unknown skill '${skill}' (see --list)"
 done
+
+[[ "${UNINSTALL}" == true ]] || add_linked_skills
 
 for agent in "${AGENTS[@]}"; do
     dir="$(target_dir "${agent}")"

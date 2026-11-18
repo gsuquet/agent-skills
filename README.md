@@ -42,6 +42,9 @@ cd ~/agent-skills
 | `claude` | `~/.claude/skills` (local development; prefer the marketplace) |
 | `<dir>` | any folder that holds one folder per skill |
 
+Installing a skill also installs the skills it links to, recursively: `write-skill` brings
+`write-for-agents`. `--uninstall` removes only the skills you name.
+
 Links follow `git pull`. Use `--copy` when an agent does not follow symbolic links. The script never
 replaces a folder that it did not install.
 
@@ -53,6 +56,10 @@ Follow [`skills/write-skill/SKILL.md`](skills/write-skill/SKILL.md), then:
 mise run marketplace  # regenerate .claude-plugin/marketplace.json
 mise run lint
 ```
+
+## Credits
+
+The visual summary of `describe-change` follows the idea of Dex Horthy's [`show-me`](https://github.com/humanlayer/skills) skill.
 
 ## License
 

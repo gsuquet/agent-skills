@@ -12,8 +12,8 @@ run = "scripts/marketplace.sh"
 [tasks.lint]
 description = "Run every check (the Lint workflow runs the same task)"
 run = [
-  "shellcheck install.sh scripts/*.sh",
-  "shfmt --diff install.sh scripts/*.sh",
+  "find install.sh scripts skills -name '*.sh' -exec shellcheck {} +",
+  "find install.sh scripts skills -name '*.sh' -exec shfmt --diff {} +",
   "typos",
   "scripts/check-skills.sh",
   "scripts/marketplace.sh --check",
