@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check that every skill follows the Agent Skills format that all supported agents read.
-# Also checks the links between skills, the skill versions, and the tracked files against a private
-# word list, kept outside the repository.
+# Also checks the links between skills, the skill versions, the shared blocks of the skill scripts,
+# and the tracked files against a private word list, kept outside the repository.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -78,6 +78,62 @@ for dir in "${REPO_ROOT}"/skills/*/; do
             fail "${rel}" "links to missing skill '${linked}' (../${linked}/SKILL.md)"
     done < <(grep -oE '\]\(\.\./[^/)]+/SKILL\.md\)' "${file}" | sed -E 's#^\]\(\.\./([^/)]+)/SKILL\.md\)$#\1#' | sort -u || true)
 done
+
+# Shared blocks: a block between "# BEGIN shared:<id>" and "# END shared:<id>" is copied into
+# several skill scripts, because a skill folder must work on its own. Every copy of one <id> must be
+# byte-identical.
+blocks_dir="$(mktemp -d)"
+trap 'rm -rf "${blocks_dir}"' EXIT
+script_index=0
+for script in "${REPO_ROOT}"/skills/*/scripts/*.sh; do
+    [[ -f "${script}" ]] || continue
+    rel="${script#"${REPO_ROOT}"/}"
+    script_index=$((script_index + 1))
+    # Writes the body of each block (marker lines excluded) to <blocks_dir>/<script>-<n>, then prints
+    # "<id> <body file>" per block, or "error: <message>" for a malformed block.
+    while read -r first rest; do
+        if [[ "${first}" == "error:" ]]; then
+            fail "${rel}" "${rest}"
+        else
+            echo "${first} ${rel} ${rest}" >> "${blocks_dir}/index"
+        fi
+    done < <(awk -v out="${blocks_dir}/${script_index}" '
+        match($0, /^[[:space:]]*# BEGIN shared:/) {
+            if (id != "") { print "error: line " NR ": BEGIN inside the open block shared:" id; exit }
+            id = substr($0, RSTART + RLENGTH)
+            sub(/[[:space:]]+$/, "", id)
+            if (id !~ /^[a-z0-9]+(-[a-z0-9]+)*$/) { print "error: line " NR ": shared block id must be kebab-case"; exit }
+            path = out "-" ++n
+            printf "" > path
+            next
+        }
+        match($0, /^[[:space:]]*# END shared:/) {
+            end_id = substr($0, RSTART + RLENGTH)
+            sub(/[[:space:]]+$/, "", end_id)
+            if (end_id != id) { print "error: line " NR ": END shared:" end_id " closes no open block"; exit }
+            close(path)
+            print id " " path
+            id = ""
+            next
+        }
+        id != "" { print > path }
+        END { if (id != "") print "error: shared:" id " has no END line" }
+    ' "${script}")
+done
+if [[ -f "${blocks_dir}/index" ]]; then
+    while read -r id; do
+        first_file="" first_body="" differing=""
+        while read -r _ file body; do
+            if [[ -z "${first_body}" ]]; then
+                first_file="${file}" first_body="${body}"
+            elif ! cmp -s "${first_body}" "${body}"; then
+                differing+=" ${file}"
+            fi
+        done < <(awk -v id="${id}" '$1 == id' "${blocks_dir}/index")
+        [[ -z "${differing}" ]] ||
+            fail "shared:${id}" "block differs between ${first_file} and:${differing}"
+    done < <(cut -d " " -f 1 "${blocks_dir}/index" | sort -u)
+fi
 
 if [[ -f "${FORBIDDEN_WORDS}" ]]; then
     pattern="$(grep -v -e '^#' -e '^[[:space:]]*$' "${FORBIDDEN_WORDS}" | paste -sd '|' -)"
