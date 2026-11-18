@@ -6,7 +6,14 @@ description: Write or change an agent skill in the agent-skills repository so th
 # Write a skill
 
 A skill is a folder `skills/<name>/` with a `SKILL.md` file. Every supported agent reads the same
-folder, so keep the skill portable.
+folder, so keep the skill portable. Follow the
+[Agent Skills best practices](https://agentskills.io/skill-creation/best-practices).
+
+## First step
+
+Before anything else, read [write-for-agents](../write-for-agents/SKILL.md) and follow it for everything the agent reads:
+the description, `SKILL.md` and the linked files. This skill adds only the rules specific to the
+skill format.
 
 ## Frontmatter
 
@@ -24,9 +31,10 @@ description: <one line> # what the skill does, then "Use when ...": 1024 charact
 
 ## Body
 
-- Give the steps, the rules and the expected output. Do not explain what the agent already knows.
-- Keep `SKILL.md` short. Move long references to `references/`, templates to `assets/`, and code to
-  `scripts/`, and link them with a relative path. Scripts print `--help` and fail with a clear message.
+- Put templates in `assets/`, long references in `references/` and code in `scripts/`, one level
+  deep, and link them with a relative path. Scripts print `--help` and fail with a clear message.
+- Keep gotchas in `SKILL.md`, under `## Gotchas`.
+- Link another skill with a relative path to its `SKILL.md` (`../<name>/SKILL.md`).
 - Do not hard-code a path of one machine or one agent: use paths relative to the skill folder.
 - Never write a client or employer name, a secret, or personal data: the repository is public.
 
