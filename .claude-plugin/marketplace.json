@@ -13,6 +13,7 @@
       "skills": [
         "./skills/describe-change",
         "./skills/diagnose",
+        "./skills/handoff",
         "./skills/interview",
         "./skills/write-for-agents",
         "./skills/write-skill"
@@ -32,6 +33,14 @@
       "description": "Diagnose a bug, regression, flaky test, Terraform drift or failing Kubernetes workload by first building a check that reproduces it. Use when the user says debug or diagnose, or reports something broken, failing or slow.",
       "skills": [
         "./skills/diagnose"
+      ]
+    },
+    {
+      "name": "handoff",
+      "source": "./",
+      "description": "Compact the current session into a handoff document that a new agent session, in Claude Code, Antigravity or another agent, continues from. Use when the user asks for a handoff, to hand over the work, or to continue in a new session.",
+      "skills": [
+        "./skills/handoff"
       ]
     },
     {
