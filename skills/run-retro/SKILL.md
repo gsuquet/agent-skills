@@ -44,7 +44,8 @@ one moment.
    category or is marked "no change".
 5. **Classify.** Write one candidate per change. Mark it **mechanical** when a check can decide
    pass or fail without judgement, **judgement** otherwise. Read
-   [references/targets.md](references/targets.md) and take the first row that matches as the
+   `../write-for-agents/references/knowledge-placement.md` (from
+   [write-for-agents](../write-for-agents/SKILL.md)) and take the first row that matches as the
    target. Skill changes go through [write-skill](../write-skill/SKILL.md), session state through
    [handoff](../handoff/SKILL.md). Done when every candidate has a kind and a target.
 6. **Rank.** Sort by severity, then by number of moments, then by lower effort first. Severity is
