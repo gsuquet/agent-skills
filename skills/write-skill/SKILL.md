@@ -43,17 +43,16 @@ metadata:
 - Do not hard-code a path of one machine or one agent: use paths relative to the skill folder.
 - Never write a client or employer name, a secret, or personal data: the repository is public.
 - Keep the evidence for improving a skill in `skills/<name>/FEEDBACK.md`, one line per correction:
-  `YYYY-MM-DD | <version> | <what went wrong> | <session or PR link>`. The run-retro skill
-  (`../run-retro/SKILL.md`) appends these lines. A change to a skill cites, in its commit message
+  `YYYY-MM-DD | <version> | <what went wrong> | <PR, MR or commit URL, or ->` (the repository is
+  public: never a session URL or a local path). [run-retro](../run-retro/SKILL.md) appends these lines. A change to a skill cites, in its commit message
   and PR description, the FEEDBACK lines it addresses.
 
 ## Finish
 
 1. Update `.claude-plugin/marketplace.json`:
    - New skill: run `mise run marketplace`.
-   - Changed skill: run `mise run bump -- <name>` (or `scripts/bump.sh <name>`), which raises
-     `metadata.version` and regenerates the marketplace.
+   - Changed skill: run `mise run bump -- <name> --level <patch|minor|major>` (`minor` for a
+     `feat`, `major` for a breaking change), which raises `metadata.version` and regenerates the
+     marketplace. Commit the bump with the change.
 2. Run `mise run lint`.
 3. Try the skill: `./install.sh --agent claude <name>`, then start a new session.
-4. Changed skill, after you commit a `feat` or a breaking change: run `mise run bump -- <name>`
-   again and commit the result. Uncommitted changes count only as a patch.
