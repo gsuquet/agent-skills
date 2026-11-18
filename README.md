@@ -19,7 +19,8 @@ Install `all` or single skills, not both: a skill would load twice. Plugin skill
 `/<plugin>:<skill>`, for example `/all:write-skill`.
 
 Update: `claude plugin update <plugin>@gsuquet-skills`, or enable auto-update for the marketplace in
-`/plugin` > Marketplaces.
+`/plugin` > Marketplaces. Auto-update is off by default for third-party marketplaces such as this one.
+See [Versions](#versions) for when an update brings changes.
 
 ## Install in other agents
 
@@ -56,6 +57,26 @@ Follow [`skills/write-skill/SKILL.md`](skills/write-skill/SKILL.md), then:
 mise run marketplace  # regenerate .claude-plugin/marketplace.json
 mise run lint
 ```
+
+## Versions
+
+Each skill carries a [semantic version](https://semver.org) in its frontmatter, the single source of
+its version:
+
+```yaml
+metadata:
+  version: 0.1.0
+```
+
+`mise run marketplace` copies it into the skill's plugin in `.claude-plugin/marketplace.json`.
+Claude Code updates a single-skill plugin only when that version changes. The `all` plugin has no
+version, so it updates on every commit
+([version resolution](https://code.claude.com/docs/en/plugins/loading.md#versions-and-updates)).
+
+To bump a changed skill, run `mise run bump -- <skill>` (`--help` for the rules). It derives the
+level from the Conventional Commits that changed the skill since `origin/main`: `fix` is a patch,
+`feat(<skill>)` a minor, `!` or `BREAKING CHANGE` a major. `mise run lint` fails when a skill changed
+but its version did not rise.
 
 ## Credits
 
