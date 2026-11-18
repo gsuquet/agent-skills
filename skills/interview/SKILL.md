@@ -49,3 +49,8 @@ find the facts.
   round 1. The user refers to decisions by number.
 - When the user says to stop, go to step 7 with the decisions settled so far and list the open ones
   as assumptions.
+
+## Gotchas
+
+- Before recommending a location, name or convention, check the user's instruction files
+  (AGENTS.md / CLAUDE.md chain) for an existing one.
