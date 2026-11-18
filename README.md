@@ -57,6 +57,10 @@ mise run marketplace  # regenerate .claude-plugin/marketplace.json
 mise run lint
 ```
 
+## Credits
+
+The visual summary of `describe-change` follows the idea of Dex Horthy's [`show-me`](https://github.com/humanlayer/skills) skill.
+
 ## License
 
 [MIT](LICENSE)
