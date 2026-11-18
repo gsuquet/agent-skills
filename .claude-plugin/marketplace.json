@@ -11,10 +11,19 @@
       "source": "./",
       "description": "Every skill of this repository. Do not combine with the single-skill plugins.",
       "skills": [
+        "./skills/describe-change",
         "./skills/diagnose",
         "./skills/interview",
         "./skills/write-for-agents",
         "./skills/write-skill"
+      ]
+    },
+    {
+      "name": "describe-change",
+      "source": "./",
+      "description": "Write the title and body of a pull request or merge request, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.",
+      "skills": [
+        "./skills/describe-change"
       ]
     },
     {
