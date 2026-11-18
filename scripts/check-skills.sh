@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Check that every skill follows the Agent Skills format that all supported agents read.
-# Also checks the tracked files against a private word list, kept outside the repository.
+# Also checks the links between skills, and the tracked files against a private word list, kept
+# outside the repository.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,6 +37,12 @@ for dir in "${REPO_ROOT}"/skills/*/; do
     [[ -n "${description}" && "${description}" != ">"* && "${description}" != "|"* ]] ||
         fail "${rel}" "description must be a non-empty single line"
     [[ ${#description} -le 1024 ]] || fail "${rel}" "description longer than 1024 characters"
+
+    # install.sh installs linked skills: each link must name an existing skill.
+    while IFS= read -r linked; do
+        [[ -f "${REPO_ROOT}/skills/${linked}/SKILL.md" ]] ||
+            fail "${rel}" "links to missing skill '${linked}' (../${linked}/SKILL.md)"
+    done < <(grep -oE '\]\(\.\./[^/)]+/SKILL\.md\)' "${file}" | sed -E 's#^\]\(\.\./([^/)]+)/SKILL\.md\)$#\1#' | sort -u || true)
 done
 
 if [[ -f "${FORBIDDEN_WORDS}" ]]; then

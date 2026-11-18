@@ -34,7 +34,8 @@ description: <one line> # what the skill does, then "Use when ...": 1024 charact
 - Put templates in `assets/`, long references in `references/` and code in `scripts/`, one level
   deep, and link them with a relative path. Scripts print `--help` and fail with a clear message.
 - Keep gotchas in `SKILL.md`, under `## Gotchas`.
-- Link another skill with a relative path to its `SKILL.md` (`../<name>/SKILL.md`).
+- Link another skill with a relative path to its `SKILL.md` (`../<name>/SKILL.md`):
+  `install.sh` installs the linked skills too, and lint fails on a link to a missing skill.
 - Do not hard-code a path of one machine or one agent: use paths relative to the skill folder.
 - Never write a client or employer name, a secret, or personal data: the repository is public.
 
