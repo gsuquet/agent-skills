@@ -83,6 +83,18 @@ remote_host() {
     esac
     [[ -n "${host}" ]] && echo "${host}"
 }
+
+# Forge of a host: github for github.com, gitlab for a host containing "gitlab" or equal to
+# $GITLAB_HOST. Returns 1 for any other host.
+forge_of_host() {
+    if [[ "$1" == github.com ]]; then
+        echo github
+    elif [[ "$1" == *gitlab* || "$1" == "${GITLAB_HOST:-}" ]]; then
+        echo gitlab
+    else
+        return 1
+    fi
+}
 # END shared:forge-detect
 
 tracker="" project="" dry_run=false dir=""
@@ -146,11 +158,7 @@ if [[ -z "${tracker}" && -n "${agents_tracker}" ]]; then
 fi
 if [[ -z "${tracker}" ]]; then
     if url="$(git remote get-url origin 2> /dev/null)" && host="$(remote_host "${url}")"; then
-        if [[ "${host}" == github.com ]]; then
-            tracker=github
-        elif [[ "${host}" == *gitlab* || "${host}" == "${GITLAB_HOST:-}" ]]; then
-            tracker=gitlab
-        fi
+        tracker="$(forge_of_host "${host}")" || tracker=""
     fi
 fi
 [[ -n "${tracker}" ]] || die 2 "no tracker found: no --tracker, no 'Tracker:' line in AGENTS.md, and origin is not github.com or a GitLab host. Ask the user which tracker to use."
