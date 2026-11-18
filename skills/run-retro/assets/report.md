@@ -14,7 +14,7 @@ a section that has nothing. Redact every secret as `<REDACTED>`.
 
 | # | When | Kind | Quote |
 |---|---|---|---|
-| M1 | <timestamp or turn> | <correction / failed / denied / retry / search / wrong assumption> | <one line, redacted> |
+| M1 | <timestamp or turn> | <correction / failed / denied / retry / search / interrupt / wrong assumption> | <one line, redacted> |
 
 ## Candidates
 
