@@ -10,8 +10,8 @@ source "${REPO_ROOT}/scripts/lib.sh"
 
 usage() {
     cat << EOF
-Usage: scripts/bump.sh <skill> [--dry-run]
-       mise run bump -- <skill> [--dry-run]
+Usage: scripts/bump.sh <skill> [--level patch|minor|major] [--dry-run]
+       mise run bump -- <skill> [--level patch|minor|major] [--dry-run]
 
 Set the metadata.version of skills/<skill>/SKILL.md to the version on ${BASE_REF}, raised by the
 highest level among the commits that changed skills/<skill>/ since the merge base of HEAD and
@@ -22,13 +22,14 @@ ${BASE_REF}:
   patch  fix(<skill>): ..., any other commit, and uncommitted changes in skills/<skill>/
 
 The result depends only on ${BASE_REF} and the branch, so running it again is safe: one branch
-raises a skill's version once. Commit a feat or breaking change, then run it again: uncommitted
-changes count only as a patch. A skill that has no version on ${BASE_REF} keeps its version.
+raises a skill's version once. Uncommitted changes count only as a patch: pass --level minor (or
+major) before committing a feat (or breaking change) to bump once, in the same commit. A skill that has no version on ${BASE_REF} keeps its version.
 
 Prints "<skill>: <old> -> <new> (<level>)" when it changes the version, then regenerates
 .claude-plugin/marketplace.json (scripts/marketplace.sh), which carries the version.
 
 Options:
+  --level L  raise at least by L (patch, minor or major), on top of what the commits give
   --dry-run  print the new version, do not edit SKILL.md
   -h, --help show this help
 
@@ -41,6 +42,7 @@ EOF
 
 skill=""
 dry_run=false
+min_level=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h | --help)
@@ -48,6 +50,22 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         --dry-run) dry_run=true ;;
+        --level)
+            [[ $# -ge 2 ]] || {
+                echo "--level needs patch, minor or major (see --help)" >&2
+                exit 2
+            }
+            case "$2" in
+                patch) min_level=1 ;;
+                minor) min_level=2 ;;
+                major) min_level=3 ;;
+                *)
+                    echo "--level must be patch, minor or major, not '$2'" >&2
+                    exit 2
+                    ;;
+            esac
+            shift
+            ;;
         -*)
             echo "unknown option: $1 (see --help)" >&2
             exit 2
@@ -119,6 +137,7 @@ done < <(git -C "${REPO_ROOT}" log --no-merges -z --format='%B' "${base_commit}.
 if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain -- "skills/${skill}/")" ]]; then
     raise 1
 fi
+((min_level == 0)) || raise "${min_level}"
 
 if ((level == 0)); then
     echo "${skill}: unchanged since ${BASE_REF}, keeping ${current}"
