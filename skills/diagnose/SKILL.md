@@ -40,8 +40,8 @@ is not enough to diagnose, say so and ask the user.
    failure. Then remove inputs, config, data, callers and steps one at a time, re-running the loop
    after each cut. Done when every remaining element is load-bearing: removing any one turns the loop
    green.
-4. **Hypothesise.** First list what changed shortly before the start time: `rtk git log
-   --since=<date> --oneline`, deploys (Argo CD app history, `helm history <release>`), config
+4. **Hypothesise.** First list what changed shortly before the start time: `git
+   log --since=<date> --oneline`, deploys (Argo CD app history, `helm history <release>`), config
    changes, the Terraform state serial (`terraform state pull | jq .serial`), dependency bumps and
    merged Renovate PRs. Then write 3 to 5 hypotheses, ranked, the recent changes first. Each is
    falsifiable: "If <X> is the cause, then <changing Y> turns the loop green." Discard any you cannot
@@ -62,7 +62,7 @@ is not enough to diagnose, say so and ask the user.
 8. **Clean up.** Done when every item passes:
    - [ ] The phase 2 loop is green on the original scenario.
    - [ ] The regression test passes, or the missing seam is recorded.
-   - [ ] `rtk grep '\[DEBUG-<tag>\]'` finds nothing.
+   - [ ] `grep -rn --exclude-dir=.git '\[DEBUG-<tag>\]' .` finds nothing.
    - [ ] Throwaway scripts and harnesses are deleted, or moved to a marked debug folder.
    - [ ] The confirmed hypothesis is stated in the commit message or the PR/MR body.
 9. **Report.** Read [assets/report.md](assets/report.md) and fill it. Done when the report is sent.

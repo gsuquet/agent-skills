@@ -9,7 +9,7 @@ Write a PR/MR body a reviewer understands in one minute: one visual, the evidenc
 
 ## Steps
 
-1. **Collect.** Read the change: `rtk git log --oneline <base>..HEAD`, `rtk git diff <base>...HEAD
+1. **Collect.** Read the change: `git log --oneline <base>..HEAD`, `git diff <base>...HEAD
    --stat`, then the diff of the files that carry the change. Collect the evidence that exists: test
    output, `terraform plan`, `kubectl diff`, screenshots. Done when you can say in one sentence what
    the change does and why.

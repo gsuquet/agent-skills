@@ -13,7 +13,7 @@ asking what was already decided.
 1. **Focus.** When the user named what the next session will do, write it down as the focus and
    keep only what serves it. Otherwise the focus is the whole remaining work. Done when the focus is
    one sentence.
-2. **Collect.** Gather the state: `rtk git status`, `rtk git log --oneline -5`, the branch, the
+2. **Collect.** Gather the state: `git status`, `git log --oneline -5`, the branch, the
    PR/MR link, the last test or lint result, the decisions taken in this session, and the files and
    links that hold the details (specs, plans, ADRs, issues, commits). Done when each field of the
    template has a value or `None.`.
