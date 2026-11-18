@@ -15,8 +15,12 @@
         "./skills/diagnose",
         "./skills/handoff",
         "./skills/interview",
+        "./skills/orchestrate",
+        "./skills/run-retro",
+        "./skills/write-docs",
         "./skills/write-for-agents",
-        "./skills/write-skill"
+        "./skills/write-skill",
+        "./skills/write-tickets"
       ]
     },
     {
@@ -56,6 +60,33 @@
       ]
     },
     {
+      "name": "orchestrate",
+      "source": "./",
+      "description": "Run a task from the main agent session as an orchestrator that settles the user's decisions, writes one brief per subagent, verifies each report independently and relays the results. Use when the user asks to orchestrate or delegate work to subagents, or when a task splits into independent parts too large for one session.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/orchestrate"
+      ]
+    },
+    {
+      "name": "run-retro",
+      "source": "./",
+      "description": "Review an agent session for the moments where the agent struggled, and propose ranked changes to instruction files, skills and automated checks, each backed by a session moment. Use when the user asks for a retro, or asks what to improve after a session. Proposes only.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/run-retro"
+      ]
+    },
+    {
+      "name": "write-docs",
+      "source": "./",
+      "description": "Write or update a technical doc for human readers from a fixed template - README, how-to, tutorial, reference, concept, runbook, or an RFC with the ADR generated from it once accepted. Use when the user asks to document something, write one of these docs, propose a design or record a technical decision. Not for text agents read or for PR/MR bodies.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/write-docs"
+      ]
+    },
+    {
       "name": "write-for-agents",
       "source": "./",
       "description": "Write or review any text an agent reads, so that every run takes the same path through it. Use when writing or editing a skill, an AGENTS.md or CLAUDE.md, or a doc an agent reaches through a link.",
@@ -71,6 +102,15 @@
       "version": "0.1.0",
       "skills": [
         "./skills/write-skill"
+      ]
+    },
+    {
+      "name": "write-tickets",
+      "source": "./",
+      "description": "Break a plan, RFC, issue or the current conversation into vertical tickets with blocking edges, with an optional spec as their parent, and publish them to GitHub, GitLab or Jira. Use when the user asks for a spec, or to break work into tickets or issues.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/write-tickets"
       ]
     }
   ]

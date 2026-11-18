@@ -4,6 +4,21 @@ Agent skills in the [Agent Skills](https://agentskills.io) format, one folder pe
 [`skills/`](skills/). The same folders work in Claude Code, Antigravity and other agents that read
 `SKILL.md`.
 
+## Skills
+
+| Skill | Use it to |
+| ----- | --------- |
+| [`interview`](skills/interview/SKILL.md) | settle every decision of a plan in rounds of questions |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | run a session as an orchestrator of subagents |
+| [`diagnose`](skills/diagnose/SKILL.md) | find a bug's cause from a check that reproduces it |
+| [`describe-change`](skills/describe-change/SKILL.md) | write a PR or MR body |
+| [`write-tickets`](skills/write-tickets/SKILL.md) | split work into tickets on GitHub, GitLab or Jira |
+| [`write-docs`](skills/write-docs/SKILL.md) | write human docs, RFCs and ADRs |
+| [`write-for-agents`](skills/write-for-agents/SKILL.md) | write anything an agent reads |
+| [`write-skill`](skills/write-skill/SKILL.md) | add or change a skill in this repository |
+| [`handoff`](skills/handoff/SKILL.md) | hand a session over to another agent |
+| [`run-retro`](skills/run-retro/SKILL.md) | propose improvements after a session |
+
 ## Install in Claude Code
 
 The repository is a plugin marketplace. Each skill is a plugin, and the `all` plugin holds every skill.
