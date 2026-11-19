@@ -15,14 +15,19 @@
         "./skills/diagnose",
         "./skills/handoff",
         "./skills/interview",
+        "./skills/orchestrate",
+        "./skills/run-retro",
+        "./skills/write-docs",
         "./skills/write-for-agents",
-        "./skills/write-skill"
+        "./skills/write-skill",
+        "./skills/write-tickets"
       ]
     },
     {
       "name": "describe-change",
       "source": "./",
       "description": "Write the title and body of a pull request or merge request, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.",
+      "version": "0.1.0",
       "skills": [
         "./skills/describe-change"
       ]
@@ -31,6 +36,7 @@
       "name": "diagnose",
       "source": "./",
       "description": "Diagnose a bug, regression, flaky test, Terraform drift or failing Kubernetes workload by first building a check that reproduces it. Use when the user says debug or diagnose, or reports something broken, failing or slow.",
+      "version": "0.1.0",
       "skills": [
         "./skills/diagnose"
       ]
@@ -39,6 +45,7 @@
       "name": "handoff",
       "source": "./",
       "description": "Compact the current session into a handoff document that a new agent session, in Claude Code, Antigravity or another agent, continues from. Use when the user asks for a handoff, to hand over the work, or to continue in a new session.",
+      "version": "0.1.0",
       "skills": [
         "./skills/handoff"
       ]
@@ -47,14 +54,43 @@
       "name": "interview",
       "source": "./",
       "description": "Interview the user in rounds of numbered questions, each with a recommended answer, until every decision of a plan, design or idea is settled, then end with a decision summary and wait for confirmation. Use only when the user asks to be grilled or interviewed, or to stress-test or challenge a plan, design or decision. Do not start it on your own for a task that merely needs planning.",
+      "version": "0.1.0",
       "skills": [
         "./skills/interview"
+      ]
+    },
+    {
+      "name": "orchestrate",
+      "source": "./",
+      "description": "Run a task from the main agent session as an orchestrator that settles the user's decisions, writes one brief per subagent, verifies each report independently and relays the results. Use when the user asks to orchestrate or delegate work to subagents, or when a task splits into independent parts too large for one session.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/orchestrate"
+      ]
+    },
+    {
+      "name": "run-retro",
+      "source": "./",
+      "description": "Review an agent session for the moments where the agent struggled, and propose ranked changes to instruction files, skills and automated checks, each backed by a session moment. Use when the user asks for a retro, or asks what to improve after a session. Proposes only.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/run-retro"
+      ]
+    },
+    {
+      "name": "write-docs",
+      "source": "./",
+      "description": "Write or update a technical doc for human readers from a fixed template - README, how-to, tutorial, reference, concept, runbook, or an RFC with the ADR generated from it once accepted. Use when the user asks to document something, write one of these docs, propose a design or record a technical decision. Not for text agents read or for PR/MR bodies.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/write-docs"
       ]
     },
     {
       "name": "write-for-agents",
       "source": "./",
       "description": "Write or review any text an agent reads, so that every run takes the same path through it. Use when writing or editing a skill, an AGENTS.md or CLAUDE.md, or a doc an agent reaches through a link.",
+      "version": "0.1.0",
       "skills": [
         "./skills/write-for-agents"
       ]
@@ -63,8 +99,18 @@
       "name": "write-skill",
       "source": "./",
       "description": "Write or change an agent skill in the agent-skills repository so that it works in Claude Code, Antigravity and other agents that read SKILL.md. Use when the user asks to add, edit, split or review a skill there.",
+      "version": "0.1.0",
       "skills": [
         "./skills/write-skill"
+      ]
+    },
+    {
+      "name": "write-tickets",
+      "source": "./",
+      "description": "Break a plan, RFC, issue or the current conversation into vertical tickets with blocking edges, with an optional spec as their parent, and publish them to GitHub, GitLab or Jira. Use when the user asks for a spec, or to break work into tickets or issues.",
+      "version": "0.1.0",
+      "skills": [
+        "./skills/write-tickets"
       ]
     }
   ]

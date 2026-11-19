@@ -1,31 +1,29 @@
 #!/usr/bin/env bash
 # Generate .claude-plugin/marketplace.json from skills/: one plugin per skill, plus "all".
+# Each single-skill plugin carries the skill's metadata.version, so Claude Code updates it only when
+# that version changes. "all" has no version: Claude Code uses the commit SHA and updates it on every
+# commit.
 # With --check, fail when the committed file is not up to date.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${REPO_ROOT}/.claude-plugin/marketplace.json"
 
-# Value of a single-line frontmatter key, quotes removed (scripts/check-skills.sh enforces the format).
-frontmatter() {
-    awk -v key="$2" '
-        NR == 1 && $0 != "---" { exit }
-        NR > 1 && $0 == "---" { exit }
-        index($0, key ":") == 1 {
-            sub("^" key ":[[:space:]]*", "")
-            gsub(/^["\x27]|["\x27]$/, "")
-            print
-            exit
-        }
-    ' "$1"
-}
+# shellcheck source=scripts/lib.sh
+source "${REPO_ROOT}/scripts/lib.sh"
 
 entries="[]"
 for dir in "${REPO_ROOT}"/skills/*/; do
     [[ -f "${dir}SKILL.md" ]] || continue
     name="$(basename "${dir}")"
     description="$(frontmatter "${dir}SKILL.md" description)"
-    entries="$(jq -c --arg n "${name}" --arg d "${description}" '. + [{name: $n, description: $d}]' <<< "${entries}")"
+    version="$(skill_version "${dir}SKILL.md")"
+    [[ -n "${version}" ]] || {
+        echo "skills/${name}/SKILL.md: missing metadata.version" >&2
+        exit 1
+    }
+    entries="$(jq -c --arg n "${name}" --arg d "${description}" --arg v "${version}" \
+        '. + [{name: $n, description: $d, version: $v}]' <<< "${entries}")"
 done
 
 generated="$(jq --indent 2 '{
@@ -39,7 +37,7 @@ generated="$(jq --indent 2 '{
       description: "Every skill of this repository. Do not combine with the single-skill plugins.",
       skills: map("./skills/" + .name)
     }]
-    + map({name, source: "./", description, skills: ["./skills/" + .name]})
+    + map({name, source: "./", description, version, skills: ["./skills/" + .name]})
   )
 }' <<< "${entries}")"
 
