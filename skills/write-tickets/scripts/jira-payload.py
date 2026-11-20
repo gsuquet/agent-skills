@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build the Jira payloads that publish-tickets.sh sends with acli. No network call.
+"""Build the Jira payloads that publish-tickets.sh sends with acli, and rewrite the ticket
+references of every tracker. No network call.
 
   jira-payload.py payload --kind spec|ticket --project KEY --title T --body FILE
                           [--config FILE] [--parent KEY] [--label NAME]...
@@ -11,6 +12,11 @@
       or nothing when the body names no ticket. The key links to <site>/browse/KEY when the config
       sets "site"; without it the key stays plain text and a warning is printed. Code spans and
       Markdown links are left as they are. --placeholder writes @NN for a draft not in map.tsv.
+
+  jira-payload.py refs --format markdown --body FILE --map MAP_TSV [--placeholder]
+      GitHub and GitLab: print the Markdown body with each "ticket NN" replaced by #<id> of draft
+      NN, or nothing when the body names no ticket. Code spans, fenced code blocks and Markdown
+      links are left as they are.
 
 The config keys are documented in ../references/trackers.md. Exit 1 on a bad config or body.
 """
@@ -257,7 +263,28 @@ def payload(args):
     json.dump(p, sys.stdout, ensure_ascii=False)
 
 
+def markdown_refs(path, ref):
+    """The Markdown body with each "ticket NN" outside code and links replaced by ref(NN)."""
+    out, fenced, found = [], False, False
+
+    def sub(m):
+        nonlocal found
+        found = True
+        return NUM.sub(lambda n: ref(n.group(0)), m.group(1))
+
+    for line in Path(path).read_text().splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        if not fenced:
+            parts = INLINE.split(line)
+            line = "".join(x if x.startswith(("`", "[")) else REFS.sub(sub, x) for x in parts)
+        out.append(line)
+    return "\n".join(out) + "\n" if found else ""
+
+
 def refs(args):
+    if args.format == "markdown" and args.config:
+        die("--config is only valid with --format adf")
     cfg = load_config(args.config)
     site = (cfg.get("site") or "").rstrip("/")
     keys = {}
@@ -276,9 +303,14 @@ def refs(args):
         else:
             die(f"draft {num} is not in {args.map}: publish every ticket before rewriting references")
         found.append(key)
+        if args.format == "markdown":
+            return key if key.startswith("@") else f"#{key}"
         # A link mark, not an inlineCard: it renders without smart-link resolution.
         return key, f"{site}/browse/{key}" if site else None
 
+    if args.format == "markdown":
+        sys.stdout.write(markdown_refs(args.body, ref))
+        return
     _, lines = body_lines(args.body, cfg)
     adf = to_adf(lines, make_cleaner(cfg.get("stripRefs")), ref)
     if not found:
@@ -305,6 +337,7 @@ def main():
     r.add_argument("--map", required=True)
     r.add_argument("--config")
     r.add_argument("--placeholder", action="store_true")
+    r.add_argument("--format", choices=["adf", "markdown"], default="adf")
     args = ap.parse_args()
     payload(args) if args.cmd == "payload" else refs(args)
 
