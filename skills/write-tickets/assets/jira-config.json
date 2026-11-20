@@ -1,0 +1,25 @@
+{
+  "ignore": "^00-",
+  "titlePrefix": "^[0-9]+: ",
+  "issueType": "Task",
+  "epic": {
+    "type": "Epic",
+    "summary": "Example epic",
+    "descriptionFile": "epic.md",
+    "labels": ["example"]
+  },
+  "epicLink": {"mode": "field", "field": "customfield_XXXXX"},
+  "fields": {"customfield_YYYYY": "00000000-0000-0000-0000-000000000000"},
+  "labels": ["example"],
+  "metaLabels": ["Component"],
+  "titleLabels": [
+    {"pattern": "\\(ADR", "label": "adr"},
+    {"pattern": "\\(RFC", "label": "rfc"}
+  ],
+  "stripRefs": "Q[0-9]+",
+  "dropLines": ["^Epic: ", "^- Jira links"],
+  "blocksLinkType": "Blocks",
+  "links": [
+    {"ticket": "02", "type": "Relates", "key": "PROJ-123"}
+  ]
+}

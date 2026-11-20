@@ -41,7 +41,9 @@ no users.
 8. **Publish.** From the repository root, run
    [scripts/publish-tickets.sh](scripts/publish-tickets.sh) `--dry-run <folder>`. Add `--tracker`
    (and `--project` for Jira) only when the user named a tracker, and `--label` only for labels the
-   user named. On exit 2, ask the user which tracker to use, then run again with `--tracker`. Check
+   user named. For Jira, add `--config <file>` when the user has one (custom fields, epic link,
+   label rules: [references/trackers.md](references/trackers.md)), and publish with `--max 1`
+   first, then ask the user to check that ticket on Jira before the full run. On exit 2, ask the user which tracker to use, then run again with `--tracker`. Check
    that the dry run creates one issue per draft with the blocking edges of the approved breakdown;
    when it does not, fix the drafts and dry-run again. Then run the same command without
    `--dry-run`. Read
