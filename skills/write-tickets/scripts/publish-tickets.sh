@@ -6,7 +6,7 @@ usage() {
     cat << 'EOF'
 Usage:
   publish-tickets.sh [--tracker github|gitlab|jira] [--project <KEY>] [--label <name>]...
-                     [--dry-run] <draft-dir>
+                     [--config <file.json>] [--max <n>] [--dry-run] <draft-dir>
   publish-tickets.sh -h | --help
 
 Run it from the repository the issues belong to. Publishes the drafts of <draft-dir>:
@@ -16,7 +16,7 @@ and appends each published draft to <draft-dir>/map.tsv (draft, issue id, URL). 
 map.tsv is skipped, so a re-run continues where a failed run stopped.
 
 Draft format: the first line is "# <title>". A ticket holds exactly one "Blocked by: 01, 03" or
-"Blocked by: None" line, and each blocker has a smaller number than the ticket. The line is
+"Blocked by: None" line ("none" also works), and each blocker has a smaller number than the ticket. The line is
 rewritten with the issue references before publishing; the files are never changed.
 
 Tracker, first match wins:
@@ -32,15 +32,23 @@ Per tracker:
           blocker gets an is_blocked_by link through `glab api`; when GitLab refuses it, the
           script warns and continues (the "Blocked by:" line stays). The spec description gets a
           task list "- [ ] #<iid>" of the tickets.
-  jira    acli jira workitem create (unverified). The spec is an Epic, tickets are Tasks with
-          --parent <epic>. Each blocker gets a "Blocks" link; on failure the script warns and
-          continues.
+  jira    acli jira workitem create --from-json, built by jira-payload.py (needs python3): the
+          body is converted to Atlassian Document Format. The spec is an Epic, tickets are Tasks
+          with the epic as parent. Each blocker gets a "Blocks" link; on failure the script warns
+          and continues. Once every ticket is published, each description that names "ticket NN"
+          is rewritten with the key of NN (map.tsv row "refs-NN"), linked to <site>/browse/KEY
+          when the config sets "site".
 
 Options:
   --tracker <name>  github, gitlab or jira.
   --project <KEY>   Jira project key.
   --label <name>    Add this label to every ticket, not to the spec. Repeat for more labels. On
                     GitHub and GitLab the label must exist.
+  --config <file>   Jira only: project rules in JSON (issue types, custom fields, epic link, label
+                    rules, lines to drop, extra links, an epic without spec.md). See
+                    references/trackers.md.
+  --max <n>         Publish at most <n> new tickets, then stop (the spec does not count). Use
+                    --max 1 as a canary: check the first ticket on the tracker, then re-run.
   --dry-run         Print every command and run none. Rendered bodies are kept in a temporary
                     folder, printed at the end. map.tsv is not written.
 
@@ -97,15 +105,17 @@ forge_of_host() {
 }
 # END shared:forge-detect
 
-tracker="" project="" dry_run=false dir=""
+tracker="" project="" config="" max="" dry_run=false dir=""
 labels=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --tracker | --project | --label)
+        --tracker | --project | --label | --config | --max)
             [[ $# -ge 2 && -n "$2" ]] || die 1 "$1 needs a value"
             case "$1" in
                 --tracker) tracker="$2" ;;
                 --project) project="$2" ;;
+                --config) config="$2" ;;
+                --max) max="$2" ;;
                 *) labels+=("$2") ;;
             esac
             shift
@@ -128,6 +138,11 @@ done
 [[ -d "${dir}" ]] || die 1 "draft folder '${dir}' not found"
 dir="$(cd "${dir}" && pwd)"
 map="${dir}/map.tsv"
+[[ -z "${max}" || "${max}" =~ ^[1-9][0-9]*$ ]] || die 1 "--max needs a positive number"
+if [[ -n "${config}" ]]; then
+    [[ -f "${config}" ]] || die 1 "config '${config}' not found"
+    config="$(cd "$(dirname "${config}")" && pwd)/$(basename "${config}")"
+fi
 
 # --- Tracker ------------------------------------------------------------------------------------
 
@@ -150,7 +165,10 @@ tracker_from_agents() {
 }
 
 agents_tracker="" agents_project=""
-tracker_from_agents || true
+# AGENTS.md is read only when the flags leave the tracker or the Jira project open.
+if [[ -z "${tracker}" || ("${tracker}" == jira && -z "${project}") ]]; then
+    tracker_from_agents || true
+fi
 
 if [[ -z "${tracker}" && -n "${agents_tracker}" ]]; then
     tracker="${agents_tracker}"
@@ -166,6 +184,7 @@ fi
 case "${tracker}" in
     github | gitlab)
         [[ -z "${project}" ]] || die 1 "--project is only valid with jira"
+        [[ -z "${config}" ]] || die 1 "--config is only valid with jira"
         ;;
     jira)
         [[ -z "${project}" && "${agents_tracker}" == jira ]] && project="${agents_project}"
@@ -178,7 +197,7 @@ esac
 case "${tracker}" in
     github) needed=(gh) ;;
     gitlab) needed=(glab jq) ;;
-    jira) needed=(acli jq) ;;
+    jira) needed=(acli jq python3) ;;
 esac
 for cmd in "${needed[@]}"; do
     if ! command -v "${cmd}" > /dev/null; then
@@ -189,11 +208,25 @@ done
 
 # --- Drafts -------------------------------------------------------------------------------------
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Value of a config key (jq path), empty when there is no config or no such key.
+cfg() {
+    [[ -n "${config}" ]] || return 0
+    jq -r "$1 // empty" "${config}" || die 1 "cannot read $1 from ${config}"
+}
+title_prefix="$(cfg .titlePrefix)" ignore="$(cfg .ignore)" blocks_type="$(cfg .blocksLinkType)"
+blocks_type="${blocks_type:-Blocks}"
+site="$(cfg .site)"
+site="${site%/}"
+
 title_of() {
     local first
     first="$(head -n 1 "$1")"
     [[ "${first}" =~ ^#\ +[^[:space:]] ]] || die 1 "$1: the first line must be '# <title>'"
-    sed -E 's/^#[[:space:]]+//; s/[[:space:]]+$//' <<< "${first}"
+    first="$(sed -E 's/^#[[:space:]]+//; s/[[:space:]]+$//' <<< "${first}")"
+    [[ -z "${title_prefix}" ]] || first="$(jq -rn --arg t "${first}" --arg p "${title_prefix}" '$t | sub($p; "")')"
+    echo "${first}"
 }
 
 has_spec=false spec_title=""
@@ -202,11 +235,34 @@ if [[ -f "${dir}/spec.md" ]]; then
     spec_title="$(title_of "${dir}/spec.md")"
 fi
 
+# A Jira config can name the parent instead of spec.md: an existing epic (key) or a new one.
+epic_key="" epic_file=""
+if [[ -n "${config}" ]] && jq -e '.epic' "${config}" > /dev/null; then
+    [[ "${has_spec}" == false ]] || die 1 "${dir}/spec.md and the epic of ${config} both name the parent: keep one"
+    has_spec=true
+    epic_key="$(cfg .epic.key)"
+    if [[ -n "${epic_key}" ]]; then
+        [[ "${epic_key}" =~ ^[A-Z][A-Z0-9_]+-[0-9]+$ ]] || die 1 "${config}: epic.key '${epic_key}' is not a Jira key"
+        spec_title="${epic_key}"
+    else
+        spec_title="$(cfg .epic.summary)"
+        [[ -n "${spec_title}" ]] || die 1 "${config}: the epic needs a 'key' or a 'summary'"
+        epic_file="$(cfg .epic.descriptionFile)"
+        if [[ -n "${epic_file}" ]]; then
+            epic_file="$(dirname "${config}")/${epic_file}"
+            [[ -f "${epic_file}" ]] || die 1 "${config}: epic.descriptionFile '${epic_file}' not found"
+        fi
+    fi
+fi
+
 t_num=() t_file=() t_title=() t_block=()
 for file in "${dir}"/*.md; do
     [[ -e "${file}" ]] || continue
     name="$(basename "${file}")"
     [[ "${name}" != spec.md ]] || continue
+    if [[ -n "${ignore}" ]] && jq -en --arg n "${name}" --arg p "${ignore}" '$n | test($p)' > /dev/null; then
+        continue
+    fi
     [[ "${name}" =~ ^([0-9]{2})-[a-z0-9]+(-[a-z0-9]+)*\.md$ ]] ||
         die 1 "${file}: draft names are spec.md or NN-<kebab-slug>.md"
     num="${BASH_REMATCH[1]}"
@@ -217,7 +273,7 @@ for file in "${dir}"/*.md; do
     [[ "${lines}" -eq 1 ]] || die 1 "${file}: needs exactly one 'Blocked by:' line, found ${lines}"
     value="$(sed -nE 's/^Blocked by:[[:space:]]*//p' "${file}" | sed -E 's/[[:space:]]+$//')"
     blockers=""
-    if [[ "${value}" != None ]]; then
+    if [[ "${value}" != None && "${value}" != none ]]; then
         for b in $(tr ',' ' ' <<< "${value}"); do
             [[ "${b}" =~ ^[0-9]{1,2}$ ]] || die 1 "${file}: blocker '${b}' is not a draft number (Blocked by: 01, 03 or None)"
             b="$(printf '%02d' "$((10#${b}))")"
@@ -244,10 +300,16 @@ map_get() {
     awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "${map}"
 }
 
+# URL of a Jira key: <site>/browse/<key>, or nothing without "site" in the config.
+jira_url() {
+    [[ -z "${site}" ]] || echo "${site}/browse/$1"
+}
+
 # Issue id of a draft: from map.tsv, or the placeholder @<draft> in a dry run.
 ref_id() {
     local id
     id="$(map_get "$1")"
+    [[ -n "${id}" || "$1" != spec ]] || id="${epic_key}"
     if [[ -z "${id}" ]]; then
         [[ "${dry_run}" == true ]] || die 4 "draft $1 is not in ${map}"
         id="@$1"
@@ -311,6 +373,7 @@ create() {
     if [[ "${tracker}" == jira ]]; then
         out="$("$@")" || status=$?
         id="$(jq -r '.key // empty' <<< "${out}" 2> /dev/null || true)"
+        [[ -z "${id}" ]] || url="$(jira_url "${id}")"
     else
         out="$("$@" 2>&1)" || status=$?
         url="$(grep -Eo 'https?://[^[:space:]]+/issues/[0-9]+' <<< "${out}" | tail -n 1 || true)"
@@ -345,12 +408,24 @@ load_project_id() {
     fi
 }
 
-# --- Labels -------------------------------------------------------------------------------------
-
-join_labels() {
-    local IFS=,
-    echo "${labels[*]}"
+# Writes the acli --from-json payload of one draft to $1, then prints its type, summary and labels.
+jira_payload() {
+    local out="$1"
+    shift
+    [[ -z "${config}" ]] || set -- "$@" --config "${config}"
+    python3 "${script_dir}/jira-payload.py" payload --project "${project}" "$@" > "${out}" ||
+        die 1 "jira-payload.py could not build ${out}"
+    jq -r '"  = " + .type + " | " + .summary + " | " + (.labels | join(","))' "${out}"
 }
+
+# "Blocked by:" text of ticket index $1: the blocker references, comma-separated, or None.
+blocked_refs() {
+    local b refs=""
+    for b in ${t_block[$1]}; do refs="${refs:+${refs}, }$(ref_text "${b}")"; done
+    echo "${refs:-None}"
+}
+
+# --- Labels -------------------------------------------------------------------------------------
 
 check_labels() {
     [[ ${#labels[@]} -gt 0 ]] || return 0
@@ -387,32 +462,47 @@ check_labels
 if [[ "${has_spec}" == true ]]; then
     if [[ -n "$(map_get spec)" ]]; then
         echo "skip spec: already $(ref_text spec)"
+    elif [[ -n "${epic_key}" ]]; then
+        echo "spec: existing epic ${epic_key}"
+        url="$(jira_url "${epic_key}")"
+        map_put spec "${epic_key}" "${url:--}"
     else
         body="${work}/spec.md"
-        render "${dir}/spec.md" "" "${body}"
+        if [[ -n "${epic_file}" ]]; then
+            cp "${epic_file}" "${body}"
+        elif [[ -f "${dir}/spec.md" ]]; then
+            render "${dir}/spec.md" "" "${body}"
+        else
+            : > "${body}"
+        fi
         case "${tracker}" in
             github) create spec gh issue create --title "${spec_title}" --body-file "${body}" ;;
             gitlab) create spec glab issue create --title "${spec_title}" --description-file "${body}" --yes ;;
-            jira) create spec acli jira workitem create --project "${project}" --type Epic \
-                --summary "${spec_title}" --description-file "${body}" --json ;;
+            jira)
+                jira_payload "${work}/spec.json" --kind spec --title "${spec_title}" --body "${body}"
+                create spec acli jira workitem create --from-json "${work}/spec.json" --json
+                ;;
         esac
     fi
 fi
 
+created=0 stopped=false
 for i in "${!t_num[@]}"; do
     num="${t_num[${i}]}"
     if [[ -n "$(map_get "${num}")" ]]; then
         echo "skip ${num}: already $(ref_text "${num}")"
         continue
     fi
+    if [[ -n "${max}" && ${created} -ge ${max} ]]; then
+        stopped=true
+        break
+    fi
+    created=$((created + 1))
 
-    refs="" ids=""
-    for b in ${t_block[${i}]}; do
-        refs="${refs:+${refs}, }$(ref_text "${b}")"
-        ids="${ids:+${ids},}$(ref_id "${b}")"
-    done
+    ids=""
+    for b in ${t_block[${i}]}; do ids="${ids:+${ids},}$(ref_id "${b}")"; done
     body="${work}/$(basename "${t_file[${i}]}")"
-    render "${t_file[${i}]}" "${refs:-None}" "${body}"
+    render "${t_file[${i}]}" "$(blocked_refs "${i}")" "${body}"
 
     cmd=()
     case "${tracker}" in
@@ -428,10 +518,11 @@ for i in "${!t_num[@]}"; do
             for label in ${labels[@]+"${labels[@]}"}; do cmd+=(--label "${label}"); done
             ;;
         jira)
-            cmd=(acli jira workitem create --project "${project}" --type Task
-                --summary "${t_title[${i}]}" --description-file "${body}" --json)
-            [[ "${has_spec}" == false ]] || cmd+=(--parent "$(ref_id spec)")
-            [[ ${#labels[@]} -eq 0 ]] || cmd+=(--label "$(join_labels)")
+            args=(--kind ticket --title "${t_title[${i}]}" --body "${body}")
+            [[ "${has_spec}" == false ]] || args+=(--parent "$(ref_id spec)")
+            for label in ${labels[@]+"${labels[@]}"}; do args+=(--label "${label}"); done
+            jira_payload "${work}/${num}.json" "${args[@]}"
+            cmd=(acli jira workitem create --from-json "${work}/${num}.json" --json)
             ;;
     esac
     create "${num}" "${cmd[@]}"
@@ -445,15 +536,51 @@ for i in "${!t_num[@]}"; do
                     -f link_type=is_blocked_by
                 ;;
             jira)
-                try acli jira workitem link create --out "$(ref_id "${b}")" --in "$(ref_id "${num}")" --type Blocks
+                try acli jira workitem link create --out "$(ref_id "${b}")" --in "$(ref_id "${num}")" \
+                    --type "${blocks_type}" --yes
                 ;;
         esac
     done
+
+    # Extra links of the config, for example "relates to" an issue outside the drafts.
+    [[ -n "${config}" ]] || continue
+    while IFS=$'\t' read -r direction other kind; do
+        if [[ "${direction}" == in ]]; then
+            try acli jira workitem link create --out "${other}" --in "$(ref_id "${num}")" --type "${kind}" --yes
+        else
+            try acli jira workitem link create --out "$(ref_id "${num}")" --in "${other}" --type "${kind}" --yes
+        fi
+    done < <(jq -r --arg n "${num}" '.links[]? | select((.ticket | tostring | tonumber) == ($n | tonumber))
+        | [.direction // "out", .key, .type] | @tsv' "${config}")
 done
+[[ "${stopped}" == false ]] || echo "Stopped after --max ${max} new tickets: re-run to publish the rest."
+
+# Jira: once every ticket has a key, "ticket NN" in a description becomes the key of NN. Map row
+# "refs-NN" records a rewritten ticket. A body that names no ticket is left alone.
+if [[ "${tracker}" == jira && "${stopped}" == false ]]; then
+    for i in "${!t_num[@]}"; do
+        num="${t_num[${i}]}"
+        [[ -z "$(map_get "refs-${num}")" ]] || continue
+        body="${work}/${num}.refs.md"
+        adf="${work}/${num}.refs.json"
+        render "${t_file[${i}]}" "$(blocked_refs "${i}")" "${body}"
+        args=(refs --body "${body}" --map "${map}")
+        [[ -z "${config}" ]] || args+=(--config "${config}")
+        [[ "${dry_run}" == false ]] || args+=(--placeholder)
+        python3 "${script_dir}/jira-payload.py" "${args[@]}" > "${adf}" ||
+            die 1 "jira-payload.py could not rewrite the ticket references of ${num}"
+        [[ -s "${adf}" ]] || continue
+        print_cmd acli jira workitem edit --key "$(ref_id "${num}")" --description-file "${adf}" --yes
+        [[ "${dry_run}" == false ]] || continue
+        acli jira workitem edit --key "$(ref_id "${num}")" --description-file "${adf}" --yes > /dev/null ||
+            die 4 "rewriting the ticket references of ${num} failed: re-run to retry"
+        map_put "refs-${num}" 1 -
+    done
+fi
 
 # GitLab has no sub-issues on every tier: the spec lists its tickets as a task list instead.
 # map.tsv row "spec-tasks <count>" records how many tickets the published list holds.
-if [[ "${tracker}" == gitlab && "${has_spec}" == true && "$(map_get spec-tasks)" != "${#t_num[@]}" ]]; then
+if [[ "${tracker}" == gitlab && "${stopped}" == false && "${has_spec}" == true && "$(map_get spec-tasks)" != "${#t_num[@]}" ]]; then
     body="${work}/spec-with-tasks.md"
     render "${dir}/spec.md" "" "${body}"
     {
@@ -478,5 +605,8 @@ list_line() {
     echo "- $1 $(ref_text "$1") $2${url:+ ${url}}"
 }
 [[ "${has_spec}" == false ]] || list_line spec "${spec_title}"
-for i in "${!t_num[@]}"; do list_line "${t_num[${i}]}" "${t_title[${i}]}"; done
+for i in "${!t_num[@]}"; do
+    [[ "${dry_run}" == true || -n "$(map_get "${t_num[${i}]}")" ]] || continue # not published (--max)
+    list_line "${t_num[${i}]}" "${t_title[${i}]}"
+done
 [[ "${dry_run}" == false ]] || echo "Dry run: nothing published. Rendered bodies: ${work}"
