@@ -8,7 +8,9 @@
 
   jira-payload.py refs --body FILE --map MAP_TSV [--config FILE] [--placeholder]
       Print the ADF description with each "ticket NN" replaced by the key of draft NN in map.tsv,
-      or nothing when the body names no ticket. --placeholder writes @NN for a draft not in map.tsv.
+      or nothing when the body names no ticket. The key links to <site>/browse/KEY when the config
+      sets "site"; without it the key stays plain text and a warning is printed. Code spans and
+      Markdown links are left as they are. --placeholder writes @NN for a draft not in map.tsv.
 
 The config keys are documented in ../references/trackers.md. Exit 1 on a bad config or body.
 """
@@ -20,8 +22,9 @@ import uuid
 from pathlib import Path
 
 INLINE = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))")
-# "ticket 05", "tickets 05, 09 and 12": each number is rewritten.
-REFS = re.compile(r"\b(tickets?) ([0-9]{2}(?:(?:, | and | or )[0-9]{2})*)\b")
+# "ticket 05", "Tickets 05, 09 and 12": the word goes, each number becomes a key.
+REFS = re.compile(r"\b(?i:tickets?) ([0-9]{2}(?:(?:,? and |,? or |, )[0-9]{2})*)\b")
+NUM = re.compile(r"[0-9]{2}")
 
 
 def die(msg):
@@ -32,29 +35,58 @@ def die(msg):
 # --- Markdown to ADF ----------------------------------------------------------------------------
 
 
-def inline(text):
+def text_node(text, marks):
+    node = {"type": "text", "text": text}
+    if marks:
+        node["marks"] = marks
+    return node
+
+
+def ref_nodes(text, marks, ref):
+    """Text nodes of text, each "ticket NN" replaced by ref(NN): a (key, href or None) pair."""
+    if ref is None:
+        return [text_node(text, marks)]
+    nodes, pos = [], 0
+    for m in REFS.finditer(text):
+        if m.start() > pos:
+            nodes.append(text_node(text[pos:m.start()], marks))
+        last = m.start(1)  # the word "ticket" goes
+        for n in NUM.finditer(text, m.start(1), m.end(1)):
+            if n.start() > last:
+                nodes.append(text_node(text[last:n.start()], marks))  # ", " or " and "
+            key, href = ref(n.group(0))
+            link = [{"type": "link", "attrs": {"href": href}}] if href else []
+            nodes.append(text_node(key, marks + link))
+            last = n.end()
+        pos = m.end()
+    if pos < len(text):
+        nodes.append(text_node(text[pos:], marks))
+    return nodes
+
+
+def inline(text, ref=None):
+    """ADF text nodes of one line. ref, when set, rewrites "ticket NN" outside code and links."""
     nodes = []
     for part in INLINE.split(text):
         if not part:
             continue
         if part.startswith("`"):
-            nodes.append({"type": "text", "text": part[1:-1], "marks": [{"type": "code"}]})
+            nodes.append(text_node(part[1:-1], [{"type": "code"}]))
         elif part.startswith("**"):
-            nodes.append({"type": "text", "text": part[2:-2], "marks": [{"type": "strong"}]})
+            nodes.extend(ref_nodes(part[2:-2], [{"type": "strong"}], ref))
         elif part.startswith("["):
             m = re.match(r"\[([^\]]+)\]\(([^)]+)\)", part)
-            mark = {"type": "link", "attrs": {"href": m.group(2)}}
-            nodes.append({"type": "text", "text": m.group(1), "marks": [mark]})
+            nodes.append(text_node(m.group(1), [{"type": "link", "attrs": {"href": m.group(2)}}]))
         else:
-            nodes.append({"type": "text", "text": part})
+            nodes.extend(ref_nodes(part, [], ref))
     return nodes
 
 
-def para(text):
-    return {"type": "paragraph", "content": inline(text)}
+def para(text, ref=None):
+    return {"type": "paragraph", "content": inline(text, ref)}
 
 
-def parse_list(lines, i, indent, clean):
+def parse_list(lines, i, indent, clean, ref=None):
     """Bullet, ordered and task lists, nested by indentation."""
     items, kind = [], None
     while i < len(lines):
@@ -64,7 +96,7 @@ def parse_list(lines, i, indent, clean):
         if len(m.group(1)) > indent:
             if not items:
                 die(f"list item indented without a parent: {lines[i]!r}")
-            nested, i = parse_list(lines, i, len(m.group(1)), clean)
+            nested, i = parse_list(lines, i, len(m.group(1)), clean, ref)
             items[-1].setdefault("content", []).append(nested)
             continue
         marker = m.group(2)
@@ -73,27 +105,27 @@ def parse_list(lines, i, indent, clean):
         text = clean(m.group(3))
         if k == "task":
             attrs = {"localId": uuid.uuid4().hex[:12], "state": "TODO" if marker == "- [ ] " else "DONE"}
-            items.append({"type": "taskItem", "attrs": attrs, "content": inline(text)})
+            items.append({"type": "taskItem", "attrs": attrs, "content": inline(text, ref)})
         else:
-            items.append({"type": "listItem", "content": [para(text)]})
+            items.append({"type": "listItem", "content": [para(text, ref)]})
         i += 1
     if kind == "task":
         return {"type": "taskList", "attrs": {"localId": uuid.uuid4().hex[:12]}, "content": items}, i
     return {"type": "orderedList" if kind == "ordered" else "bulletList", "content": items}, i
 
 
-def table(rows):
+def table(rows, ref=None):
     out = []
     for n, row in enumerate(rows):
         if n == 1 and re.fullmatch(r"\|[\s:|-]+\|?", row.strip()):
             continue  # header separator
         ctype = "tableHeader" if n == 0 else "tableCell"
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
-        out.append({"type": "tableRow", "content": [{"type": ctype, "content": [para(c)]} for c in cells]})
+        out.append({"type": "tableRow", "content": [{"type": ctype, "content": [para(c, ref)]} for c in cells]})
     return {"type": "table", "attrs": {"isNumberColumnEnabled": False, "layout": "default"}, "content": out}
 
 
-def to_adf(lines, clean):
+def to_adf(lines, clean, ref=None):
     content, i = [], 0
     while i < len(lines):
         line = lines[i]
@@ -102,19 +134,19 @@ def to_adf(lines, clean):
             i += 1
         elif heading:
             level = {"level": len(heading.group(1))}
-            content.append({"type": "heading", "attrs": level, "content": inline(heading.group(2))})
+            content.append({"type": "heading", "attrs": level, "content": inline(heading.group(2), ref)})
             i += 1
         elif line.startswith("|"):
             j = i
             while j < len(lines) and lines[j].startswith("|"):
                 j += 1
-            content.append(table(lines[i:j]))
+            content.append(table(lines[i:j], ref))
             i = j
         elif re.match(r"^(- |\d+\. )", line):
-            node, i = parse_list(lines, i, 0, clean)
+            node, i = parse_list(lines, i, 0, clean, ref)
             content.append(node)
         else:
-            content.append(para(clean(line)))
+            content.append(para(clean(line), ref))
             i += 1
     return {"type": "doc", "version": 1, "content": content}
 
@@ -152,6 +184,9 @@ def load_config(path):
     link = cfg.get("epicLink", {"mode": "parent"})
     if link.get("mode") not in ("parent", "field") or (link["mode"] == "field" and not link.get("field")):
         die(f"{path}: epicLink must be {{\"mode\": \"parent\"}} or {{\"mode\": \"field\", \"field\": \"customfield_...\"}}")
+    site = cfg.get("site")
+    if site is not None and not re.fullmatch(r"https://[^/\s]+/?", str(site)):
+        die(f"{path}: site must be the base URL of the Jira site, for example https://example.atlassian.net")
     patterns = [cfg.get("stripRefs") or "", *cfg.get("dropLines", [])]
     patterns += [r.get("pattern", "") for r in cfg.get("titleLabels", [])]
     for pattern in patterns:
@@ -224,28 +259,34 @@ def payload(args):
 
 def refs(args):
     cfg = load_config(args.config)
-    _, lines = body_lines(args.body, cfg)
-    adf = to_adf(lines, make_cleaner(cfg.get("stripRefs")))
-    text = json.dumps(adf, ensure_ascii=False)
-    if not REFS.search(text):
-        return
+    site = (cfg.get("site") or "").rstrip("/")
     keys = {}
     for row in Path(args.map).read_text().splitlines() if Path(args.map).exists() else []:
         cols = row.split("\t")
         if len(cols) >= 2 and re.fullmatch(r"[0-9]{2}", cols[0]):
             keys[cols[0]] = cols[1]
 
-    def key(num):
+    found = []
+
+    def ref(num):
         if num in keys:
-            return keys[num]
-        if args.placeholder:
-            return f"@{num}"
-        die(f"draft {num} is not in {args.map}: publish every ticket before rewriting references")
+            key = keys[num]
+        elif args.placeholder:
+            key = f"@{num}"
+        else:
+            die(f"draft {num} is not in {args.map}: publish every ticket before rewriting references")
+        found.append(key)
+        # A link mark, not an inlineCard: it renders without smart-link resolution.
+        return key, f"{site}/browse/{key}" if site else None
 
-    def repl(m):
-        return re.sub(r"[0-9]{2}", lambda n: key(n.group(0)), m.group(2))
-
-    json.dump(json.loads(REFS.sub(repl, text)), sys.stdout, ensure_ascii=False)
+    _, lines = body_lines(args.body, cfg)
+    adf = to_adf(lines, make_cleaner(cfg.get("stripRefs")), ref)
+    if not found:
+        return
+    if not site:
+        print(f"warning: {args.body}: no \"site\" in the config, so {', '.join(sorted(set(found)))} stay plain keys "
+              "(add \"site\" to link them)", file=sys.stderr)
+    json.dump(adf, sys.stdout, ensure_ascii=False)
 
 
 def main():
