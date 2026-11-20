@@ -36,7 +36,8 @@ Per tracker:
           body is converted to Atlassian Document Format. The spec is an Epic, tickets are Tasks
           with the epic as parent. Each blocker gets a "Blocks" link; on failure the script warns
           and continues. Once every ticket is published, each description that names "ticket NN"
-          is rewritten with the key of NN (map.tsv row "refs-NN").
+          is rewritten with the key of NN (map.tsv row "refs-NN"), linked to <site>/browse/KEY
+          when the config sets "site".
 
 Options:
   --tracker <name>  github, gitlab or jira.
@@ -216,6 +217,8 @@ cfg() {
 }
 title_prefix="$(cfg .titlePrefix)" ignore="$(cfg .ignore)" blocks_type="$(cfg .blocksLinkType)"
 blocks_type="${blocks_type:-Blocks}"
+site="$(cfg .site)"
+site="${site%/}"
 
 title_of() {
     local first
@@ -297,6 +300,11 @@ map_get() {
     awk -F '\t' -v k="$1" '$1 == k { print $2; exit }' "${map}"
 }
 
+# URL of a Jira key: <site>/browse/<key>, or nothing without "site" in the config.
+jira_url() {
+    [[ -z "${site}" ]] || echo "${site}/browse/$1"
+}
+
 # Issue id of a draft: from map.tsv, or the placeholder @<draft> in a dry run.
 ref_id() {
     local id
@@ -365,6 +373,7 @@ create() {
     if [[ "${tracker}" == jira ]]; then
         out="$("$@")" || status=$?
         id="$(jq -r '.key // empty' <<< "${out}" 2> /dev/null || true)"
+        [[ -z "${id}" ]] || url="$(jira_url "${id}")"
     else
         out="$("$@" 2>&1)" || status=$?
         url="$(grep -Eo 'https?://[^[:space:]]+/issues/[0-9]+' <<< "${out}" | tail -n 1 || true)"
@@ -455,7 +464,8 @@ if [[ "${has_spec}" == true ]]; then
         echo "skip spec: already $(ref_text spec)"
     elif [[ -n "${epic_key}" ]]; then
         echo "spec: existing epic ${epic_key}"
-        map_put spec "${epic_key}" -
+        url="$(jira_url "${epic_key}")"
+        map_put spec "${epic_key}" "${url:--}"
     else
         body="${work}/spec.md"
         if [[ -n "${epic_file}" ]]; then

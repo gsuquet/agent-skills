@@ -1,4 +1,5 @@
 {
+  "site": "https://example.atlassian.net",
   "ignore": "^00-",
   "titlePrefix": "^[0-9]+: ",
   "issueType": "Task",

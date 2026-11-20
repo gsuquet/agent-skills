@@ -8,8 +8,11 @@ a live tracker. Everything marked `(unverified)` comes from documentation or mem
 
 One row per published item, tab-separated: `<draft> <id> <url>`. Special rows: `tracker <name>
 <project>` (written first; a re-run on another tracker stops) and, on GitLab, `spec-tasks <count>`
-(how many tickets the spec task list holds). To recover from an issue created without a row (the
-script says so and exits 4), add its row by hand, then re-run.
+(how many tickets the spec task list holds), and on Jira `refs-NN 1 -` (the description of ticket
+NN had its references rewritten). To recover from an issue created without a row (the script says
+so and exits 4), add its row by hand, then re-run. To rewrite the references again (for example
+after adding `site` to the config), delete the `refs-NN` rows, then re-run: the script skips every
+published draft and rewrites only those descriptions.
 
 ## GitHub (`gh` 2.103.3)
 
@@ -27,6 +30,11 @@ script says so and exits 4), add its row by hand, then re-run.
   and warns.
 
 ## GitLab (`glab` 1.126.0)
+
+GitLab Flavored Markdown links `#123` (issue), `!123` (merge request) and
+`namespace/project#123` or `namespace/project!123` (another project) of the same GitLab
+instance ([GitLab-specific references](https://docs.gitlab.com/user/markdown/#gitlab-specific-references)).
+On another forge or on Jira these are plain text, hence full URLs in the drafts.
 
 | Operation | Command | Status |
 | --- | --- | --- |
@@ -63,9 +71,17 @@ Tier limits, all (unverified):
   `--from-json` or `--description-file` is unverified: publish with `--max 1` first and check it.
 - `parentIssueId` is documented for sub-tasks. A project where Tasks cannot take an Epic parent
   refuses it; some sites set the epic through an Epic Link custom field instead (unverified).
-- No URL is recorded for Jira (`-` in `map.tsv`): the site name is not known to the script.
-- Once every ticket is published, the script rewrites `ticket 05` and `tickets 05 and 09` in each
-  description with the keys (map.tsv row `refs-NN`): no key exists before its ticket.
+- The URL column of `map.tsv` holds `<site>/browse/<KEY>` when the config sets `site`, `-`
+  otherwise.
+- Once every ticket is published, the script rewrites `ticket 05`, `Ticket 05` and `tickets 05, 09
+  and 12` in each description with the keys (map.tsv row `refs-NN`): no key exists before its
+  ticket. Each key is a text node with a `link` mark to `<site>/browse/<KEY>`
+  ([link mark](https://developer.atlassian.com/cloud/jira/platform/apis/document/marks/link/)),
+  not an `inlineCard`, which Jira renders as a smart link card resolved from the URL
+  ([inlineCard](https://developer.atlassian.com/cloud/jira/platform/apis/document/nodes/inlineCard/)).
+  Code spans and Markdown links are left as they are. Without `site`, the key stays plain text and
+  the script warns: whether Jira links a plain key in an ADF text node is (unverified), as the ADF
+  reference does not say.
 
 ### Jira config (`--config <file.json>`)
 
@@ -75,6 +91,7 @@ Project rules that flags do not cover. Every key is optional; start from
 
 | Key | Effect |
 | --- | --- |
+| `site` | Base URL of the Jira site, for example `https://example.atlassian.net`: ticket references link to `<site>/browse/<KEY>`, and `map.tsv` records that URL. |
 | `ignore` | Skip draft files whose name matches, for example `^00-` for a breakdown file. |
 | `titlePrefix` | Remove this prefix from each title, for example `^[0-9]+: ` for `# 05: Title`. |
 | `issueType` | Type of the tickets (default `Task`). |

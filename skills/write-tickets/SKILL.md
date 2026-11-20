@@ -35,8 +35,9 @@ no users.
    Stop and wait for the user. On corrections, go back to step 5. Done when the user answers `ok`.
 7. **Write the drafts.** Write them to `$(git rev-parse --git-common-dir)/tickets/<slug>/`, `<slug>`
    naming the work in kebab-case: `spec.md` from step 4, and one `NN-<slug>.md` per ticket from
-   [assets/ticket.md](assets/ticket.md), `NN` being its breakdown number. When the user wants no
-   tracker, print the folder path and stop. Done when the folder holds one file per ticket, and
+   [assets/ticket.md](assets/ticket.md), `NN` being its breakdown number. Name a ticket of the
+   batch as `ticket NN`, and anything outside it (a merge request, an existing issue) as a Markdown
+   link with its full URL. When the user wants no tracker, print the folder path and stop. Done when the folder holds one file per ticket, and
    `spec.md` when step 2 said yes.
 8. **Publish.** From the repository root, run
    [scripts/publish-tickets.sh](scripts/publish-tickets.sh) `--dry-run <folder>`. Add `--tracker`
