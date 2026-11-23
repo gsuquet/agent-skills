@@ -35,7 +35,8 @@ Per tracker:
   jira    acli jira workitem create --from-json, built by jira-payload.py (needs python3): the
           body is converted to Atlassian Document Format. The spec is an Epic, tickets are Tasks
           with the epic as parent. Each blocker gets a "Blocks" link; on failure the script warns
-          and continues. Once every ticket is published, each description that names "ticket NN"
+          and continues. The first link of a run is read back: exit 4 when Jira shows it
+          inverted. Once every ticket is published, each description that names "ticket NN"
           is rewritten with the key of NN (map.tsv row "refs-NN"), linked to <site>/browse/KEY
           when the config sets "site".
 
@@ -397,6 +398,43 @@ try() {
     "$@" > /dev/null || warn "$1 refused the link above: the 'Blocked by:' line in the body still records it"
 }
 
+# Creates the Jira link "<$1> <$2> <$3>", for example "PROJ-1 Blocks PROJ-2": PROJ-1 blocks PROJ-2.
+# Returns 1 when acli refuses it (a warning, the "Blocked by:" line still records the edge).
+jira_link() {
+    local subject="$1" type="$2" object="$3"
+    echo "  = ${subject} $(tr '[:upper:]' '[:lower:]' <<< "${type}") ${object}"
+    # Verified with acli 1.3.40: "link create --out X --in Y --type Blocks" makes Y block X, although
+    # its success message prints "X Blocks Y". So the subject (the blocker) goes in --in, the object
+    # (the blocked ticket) in --out. Do not trust the success message: check_block_link reads it back.
+    print_cmd acli jira workitem link create --out "${object}" --in "${subject}" --type "${type}" --yes
+    [[ "${dry_run}" == false ]] || return 0
+    acli jira workitem link create --out "${object}" --in "${subject}" --type "${type}" --yes > /dev/null && return 0
+    warn "acli refused the link above: the 'Blocked by:' line in the body still records it"
+    return 1
+}
+
+# Reads back the first Blocks link of the run from the blocked ticket and stops the run when Jira
+# records it the other way round: every later link would be inverted too.
+block_checked=false
+check_block_link() {
+    local blocker="$1" blocked="$2" out state
+    block_checked=true
+    print_cmd acli jira workitem view "${blocked}" --json --fields issuelinks
+    out="$(acli jira workitem view "${blocked}" --json --fields issuelinks)" ||
+        die 4 "cannot read back the links of ${blocked}: check on Jira that ${blocked} 'is blocked by' ${blocker}"
+    # On the blocked ticket, Jira lists the blocker as inwardIssue ("is blocked by"); as
+    # outwardIssue ("blocks") when the link is inverted.
+    state="$(jq -r --arg k "${blocker}" --arg t "${blocks_type}" '
+        [(.fields.issuelinks // .issuelinks // [])[] | select(.type.name == $t)
+            | if .inwardIssue.key == $k then "ok" elif .outwardIssue.key == $k then "inverted" else empty end]
+        | .[0] // "missing"' <<< "${out}" 2> /dev/null || echo unreadable)"
+    case "${state}" in
+        ok) echo "  verified: ${blocker} blocks ${blocked}" ;;
+        inverted) die 4 "INVERTED LINK: Jira shows ${blocked} blocks ${blocker}, the opposite of the draft. Stop publishing and fix the links: see 'Inverted Blocks links' in references/trackers.md" ;;
+        *) warn "could not verify the direction of the link ${blocker} -> ${blocked} (${state}): check on Jira that ${blocked} 'is blocked by' ${blocker} before the next run" ;;
+    esac
+}
+
 # Numeric id of the GitLab project, read once: the issue links API needs it.
 gitlab_project_id=""
 load_project_id() {
@@ -536,8 +574,10 @@ for i in "${!t_num[@]}"; do
                     -f link_type=is_blocked_by
                 ;;
             jira)
-                try acli jira workitem link create --out "$(ref_id "${b}")" --in "$(ref_id "${num}")" \
-                    --type "${blocks_type}" --yes
+                if jira_link "$(ref_id "${b}")" "${blocks_type}" "$(ref_id "${num}")" &&
+                    [[ "${dry_run}" == false && "${block_checked}" == false ]]; then
+                    check_block_link "$(ref_id "${b}")" "$(ref_id "${num}")"
+                fi
                 ;;
         esac
     done
@@ -545,10 +585,11 @@ for i in "${!t_num[@]}"; do
     # Extra links of the config, for example "relates to" an issue outside the drafts.
     [[ -n "${config}" ]] || continue
     while IFS=$'\t' read -r direction other kind; do
+        # "out" (default): "<ticket> <type> <key>"; "in": "<key> <type> <ticket>".
         if [[ "${direction}" == in ]]; then
-            try acli jira workitem link create --out "${other}" --in "$(ref_id "${num}")" --type "${kind}" --yes
+            jira_link "${other}" "${kind}" "$(ref_id "${num}")" || true
         else
-            try acli jira workitem link create --out "$(ref_id "${num}")" --in "${other}" --type "${kind}" --yes
+            jira_link "$(ref_id "${num}")" "${kind}" "${other}" || true
         fi
     done < <(jq -r --arg n "${num}" '.links[]? | select((.ticket | tostring | tonumber) == ($n | tonumber))
         | [.direction // "out", .key, .type] | @tsv' "${config}")
