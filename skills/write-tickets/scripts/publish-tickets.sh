@@ -28,10 +28,13 @@ Tracker, first match wins:
 
 Per tracker:
   github  gh issue create. Tickets get --parent <spec> and --blocked-by <blockers>.
+          Once every ticket is published, each body that names "ticket NN" is rewritten with
+          #<id> of NN through gh issue edit --body-file (map.tsv row "refs-NN").
   gitlab  glab issue create. Tickets get --linked-issues <spec> --link-type relates_to. Each
           blocker gets an is_blocked_by link through `glab api`; when GitLab refuses it, the
           script warns and continues (the "Blocked by:" line stays). The spec description gets a
-          task list "- [ ] #<iid>" of the tickets.
+          task list "- [ ] #<iid>" of the tickets. "ticket NN" is rewritten as on github,
+          through glab issue update --description-file.
   jira    acli jira workitem create --from-json, built by jira-payload.py (needs python3): the
           body is converted to Atlassian Document Format. The spec is an Epic, tickets are Tasks
           with the epic as parent. Each blocker gets a "Blocks" link; on failure the script warns
@@ -196,8 +199,8 @@ case "${tracker}" in
 esac
 
 case "${tracker}" in
-    github) needed=(gh) ;;
-    gitlab) needed=(glab jq) ;;
+    github) needed=(gh python3) ;;
+    gitlab) needed=(glab jq python3) ;;
     jira) needed=(acli jq python3) ;;
 esac
 for cmd in "${needed[@]}"; do
@@ -596,25 +599,31 @@ for i in "${!t_num[@]}"; do
 done
 [[ "${stopped}" == false ]] || echo "Stopped after --max ${max} new tickets: re-run to publish the rest."
 
-# Jira: once every ticket has a key, "ticket NN" in a description becomes the key of NN. Map row
-# "refs-NN" records a rewritten ticket. A body that names no ticket is left alone.
-if [[ "${tracker}" == jira && "${stopped}" == false ]]; then
+# Once every ticket has an id, "ticket NN" in a body becomes the reference of NN: the Jira key,
+# or #<id> on GitHub and GitLab. Map row "refs-NN" records a rewritten ticket. A body that names no
+# ticket is left alone.
+if [[ "${stopped}" == false ]]; then
     for i in "${!t_num[@]}"; do
         num="${t_num[${i}]}"
         [[ -z "$(map_get "refs-${num}")" ]] || continue
         body="${work}/${num}.refs.md"
-        adf="${work}/${num}.refs.json"
+        out="${work}/${num}.refs.out"
         render "${t_file[${i}]}" "$(blocked_refs "${i}")" "${body}"
         args=(refs --body "${body}" --map "${map}")
+        [[ "${tracker}" == jira ]] || args+=(--format markdown)
         [[ -z "${config}" ]] || args+=(--config "${config}")
         [[ "${dry_run}" == false ]] || args+=(--placeholder)
-        python3 "${script_dir}/jira-payload.py" "${args[@]}" > "${adf}" ||
+        python3 "${script_dir}/jira-payload.py" "${args[@]}" > "${out}" ||
             die 1 "jira-payload.py could not rewrite the ticket references of ${num}"
-        [[ -s "${adf}" ]] || continue
-        print_cmd acli jira workitem edit --key "$(ref_id "${num}")" --description-file "${adf}" --yes
+        [[ -s "${out}" ]] || continue
+        case "${tracker}" in
+            github) cmd=(gh issue edit "$(ref_id "${num}")" --body-file "${out}") ;;
+            gitlab) cmd=(glab issue update "$(ref_id "${num}")" --description-file "${out}") ;;
+            jira) cmd=(acli jira workitem edit --key "$(ref_id "${num}")" --description-file "${out}" --yes) ;;
+        esac
+        print_cmd "${cmd[@]}"
         [[ "${dry_run}" == false ]] || continue
-        acli jira workitem edit --key "$(ref_id "${num}")" --description-file "${adf}" --yes > /dev/null ||
-            die 4 "rewriting the ticket references of ${num} failed: re-run to retry"
+        "${cmd[@]}" > /dev/null || die 4 "rewriting the ticket references of ${num} failed: re-run to retry"
         map_put "refs-${num}" 1 -
     done
 fi
