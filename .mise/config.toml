@@ -6,7 +6,7 @@ shfmt = '3.14.1'
 typos = '1.51.1'
 
 [tasks.marketplace]
-description = "Generate .claude-plugin/marketplace.json from skills/"
+description = "Generate the Claude Code plugin manifests from skills/"
 run = "scripts/marketplace.sh"
 
 [tasks.bump]

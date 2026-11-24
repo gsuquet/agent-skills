@@ -1,27 +1,15 @@
 {
-  "name": "gsuquet-skills",
+  "name": "gsuquet",
   "owner": {
     "name": "Gabriel Suquet",
     "url": "https://github.com/gsuquet"
   },
-  "description": "Agent skills: install all of them with the \"all\" plugin, or one plugin per skill.",
+  "description": "Agent skills: install all of them with the \"gs\" plugin, or one plugin per skill.",
   "plugins": [
     {
-      "name": "all",
-      "source": "./",
-      "description": "Every skill of this repository. Do not combine with the single-skill plugins.",
-      "skills": [
-        "./skills/describe-change",
-        "./skills/diagnose",
-        "./skills/handoff",
-        "./skills/interview",
-        "./skills/orchestrate",
-        "./skills/run-retro",
-        "./skills/write-docs",
-        "./skills/write-for-agents",
-        "./skills/write-skill",
-        "./skills/write-tickets"
-      ]
+      "name": "gs",
+      "source": "./plugins/gs",
+      "description": "Every skill of this repository, each as a plugin with its own version."
     },
     {
       "name": "describe-change",
@@ -54,7 +42,7 @@
       "name": "interview",
       "source": "./",
       "description": "Interview the user in rounds of numbered questions, each with a recommended answer, until every decision of a plan, design or idea is settled, then end with a decision summary and wait for confirmation. Use only when the user asks to be grilled or interviewed, or to stress-test or challenge a plan, design or decision. Do not start it on your own for a task that merely needs planning.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "skills": [
         "./skills/interview"
       ]
@@ -63,7 +51,7 @@
       "name": "orchestrate",
       "source": "./",
       "description": "Run a task from the main agent session as an orchestrator that settles the user's decisions, writes one brief per subagent, verifies each report independently and relays the results. Use when the user asks to orchestrate or delegate work to subagents, or when a task splits into independent parts too large for one session.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "skills": [
         "./skills/orchestrate"
       ]
@@ -81,7 +69,7 @@
       "name": "write-docs",
       "source": "./",
       "description": "Write or update a technical doc for human readers from a fixed template - README, how-to, tutorial, reference, concept, runbook, or an RFC with the ADR generated from it once accepted. Use when the user asks to document something, write one of these docs, propose a design or record a technical decision. Not for text agents read or for PR/MR bodies.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "skills": [
         "./skills/write-docs"
       ]
@@ -107,8 +95,8 @@
     {
       "name": "write-tickets",
       "source": "./",
-      "description": "Break a plan, RFC, issue or the current conversation into vertical tickets with blocking edges, with an optional spec as their parent, and publish them to GitHub, GitLab or Jira. Use when the user asks for a spec, or to break work into tickets or issues.",
-      "version": "0.1.0",
+      "description": "Break a plan, RFC, issue or the current conversation into vertical tickets with blocking edges, with an optional spec as their parent, publish them to GitHub, GitLab or Jira, and sync later changes. Use when the user asks for a spec, to break work into tickets or issues, or to change or check the links of tickets it published.",
+      "version": "0.2.0",
       "skills": [
         "./skills/write-tickets"
       ]

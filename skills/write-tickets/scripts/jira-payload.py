@@ -7,20 +7,28 @@ references of every tracker. No network call.
       Print the JSON for `acli jira workitem create --from-json`: the Markdown body converted to
       Atlassian Document Format (ADF), labels, custom fields and the epic link from the config.
 
-  jira-payload.py refs --body FILE --map MAP_TSV [--config FILE] [--placeholder]
+  jira-payload.py refs --body FILE --map MAP_TSV [--config FILE] [--placeholder] [--always]
       Print the ADF description with each "ticket NN" replaced by the key of draft NN in map.tsv,
       or nothing when the body names no ticket. The key links to <site>/browse/KEY when the config
       sets "site"; without it the key stays plain text and a warning is printed. Code spans and
       Markdown links are left as they are. --placeholder writes @NN for a draft not in map.tsv.
+      --always prints the description also when the body names no ticket.
 
   jira-payload.py refs --format markdown --body FILE --map MAP_TSV [--placeholder]
       GitHub and GitLab: print the Markdown body with each "ticket NN" replaced by #<id> of draft
       NN, or nothing when the body names no ticket. Code spans, fenced code blocks and Markdown
       links are left as they are.
 
+  jira-payload.py check --title T --body FILE [--config FILE]
+      Fail when a session reference (Q23) is left; payload and refs (ADF) fail on it too.
+
+  jira-payload.py digest --file JSON
+      Print a short hash of {summary, description}, ignoring the ADF localId values.
+
 The config keys are documented in ../references/trackers.md. Exit 1 on a bad config or body.
 """
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -31,6 +39,11 @@ INLINE = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))")
 # "ticket 05", "Tickets 05, 09 and 12": the word goes, each number becomes a key.
 REFS = re.compile(r"\b(?i:tickets?) ([0-9]{2}(?:(?:,? and |,? or |, )[0-9]{2})*)\b")
 NUM = re.compile(r"[0-9]{2}")
+SESSION_REFS = "Q[0-9]+"
+# Ordinary text that looks like a question number: "Q4 2026", "2026-Q4", "Q1 and Q2 FY26".
+_YEAR = r"(?:20\d\d|FY ?(?:20)?\d\d|['\u2019]\d\d)\b"
+_QS = r"Q[1-4](?:\s*(?:,|and|or|to|/|-|\u2013)\s*Q[1-4])*\b"
+QUARTER = re.compile(rf"\b{_QS}(?:\s+of)?[\s/-]*{_YEAR}|(?<!\w){_YEAR}[\s/-]*{_QS}")
 
 
 def die(msg):
@@ -92,7 +105,7 @@ def para(text, ref=None):
     return {"type": "paragraph", "content": inline(text, ref)}
 
 
-def parse_list(lines, i, indent, clean, ref=None):
+def parse_list(lines, i, indent, ref=None):
     """Bullet, ordered and task lists, nested by indentation."""
     items, kind = [], None
     while i < len(lines):
@@ -102,13 +115,13 @@ def parse_list(lines, i, indent, clean, ref=None):
         if len(m.group(1)) > indent:
             if not items:
                 die(f"list item indented without a parent: {lines[i]!r}")
-            nested, i = parse_list(lines, i, len(m.group(1)), clean, ref)
+            nested, i = parse_list(lines, i, len(m.group(1)), ref)
             items[-1].setdefault("content", []).append(nested)
             continue
         marker = m.group(2)
         k = "task" if marker.startswith("- [") else ("ordered" if marker[0].isdigit() else "bullet")
         kind = kind or k
-        text = clean(m.group(3))
+        text = m.group(3)
         if k == "task":
             attrs = {"localId": uuid.uuid4().hex[:12], "state": "TODO" if marker == "- [ ] " else "DONE"}
             items.append({"type": "taskItem", "attrs": attrs, "content": inline(text, ref)})
@@ -131,7 +144,7 @@ def table(rows, ref=None):
     return {"type": "table", "attrs": {"isNumberColumnEnabled": False, "layout": "default"}, "content": out}
 
 
-def to_adf(lines, clean, ref=None):
+def to_adf(lines, ref=None):
     content, i = [], 0
     while i < len(lines):
         line = lines[i]
@@ -149,10 +162,10 @@ def to_adf(lines, clean, ref=None):
             content.append(table(lines[i:j], ref))
             i = j
         elif re.match(r"^(- |\d+\. )", line):
-            node, i = parse_list(lines, i, 0, clean, ref)
+            node, i = parse_list(lines, i, 0, ref)
             content.append(node)
         else:
-            content.append(para(clean(line), ref))
+            content.append(para(line, ref))
             i += 1
     return {"type": "doc", "version": 1, "content": content}
 
@@ -160,24 +173,26 @@ def to_adf(lines, clean, ref=None):
 # --- Config rules -------------------------------------------------------------------------------
 
 
-def make_cleaner(pattern):
-    """Remove references that mean nothing outside the session (stripRefs), with their punctuation."""
+def session_refs(text, cfg):
+    """References that mean nothing outside the session, such as question numbers, outside code and URLs."""
+    pattern = cfg.get("sessionRefs", cfg.get("stripRefs", SESSION_REFS))
     if not pattern:
-        return lambda text: text
-    p = f"(?:{pattern})"
-    seq = rf"{p}(?:\s*(?:,|and|/)\s*{p})*"
+        return []
+    kept, fenced = [], False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced:
+            kept.append(re.sub(r"`[^`]+`|\]\([^)]+\)|\w+://\S+", " ", line))
+    text = QUARTER.sub(" ", "\n".join(kept))
+    return sorted({m.group(0) for m in re.finditer(rf"\b(?:{pattern})\b", text)})
 
-    def clean(text):
-        text = re.sub(rf"\s*\((?:{p}(?:[,/ ]+(?:and )?)?)+\)", "", text)  # "(Q1)", "(Q1, Q2)"
-        text = re.sub(rf"\s*[,;]\s*{p}\b", "", text)  # "(ticket 09, Q4)" -> "(ticket 09)"
-        text = re.sub(rf"\(\s*{p}\s*[,;]\s*", "(", text)  # "(Q4, ticket 09)" -> "(ticket 09)"
-        text = re.sub(rf"^{seq}\s*:\s*", "", text)  # "Q1: text" -> "text"
-        text = re.sub(rf"\b{seq}\s+and\s+", "", text)  # "Q1 and ticket 05" -> "ticket 05"
-        text = re.sub(rf"\s*\b{p}\b", "", text)
-        text = re.sub(r"(\. )([a-z])", lambda m: m.group(1) + m.group(2).upper(), text)
-        return text[:1].upper() + text[1:] if text else text
 
-    return clean
+def refuse_session_refs(text, cfg, where):
+    left = session_refs(text, cfg)
+    if left:
+        die(f"{where}: session reference {', '.join(left)}: write what it refers to instead "
+            "(a quarter needs its year: Q4 2026)")
 
 
 def load_config(path):
@@ -193,7 +208,7 @@ def load_config(path):
     site = cfg.get("site")
     if site is not None and not re.fullmatch(r"https://[^/\s]+/?", str(site)):
         die(f"{path}: site must be the base URL of the Jira site, for example https://example.atlassian.net")
-    patterns = [cfg.get("stripRefs") or "", *cfg.get("dropLines", [])]
+    patterns = [cfg.get("sessionRefs") or "", cfg.get("stripRefs") or "", *cfg.get("dropLines", [])]
     patterns += [r.get("pattern", "") for r in cfg.get("titleLabels", [])]
     for pattern in patterns:
         try:
@@ -239,11 +254,8 @@ def ticket_labels(raw, title, cfg, extra):
 def payload(args):
     cfg = load_config(args.config)
     raw, lines = body_lines(args.body, cfg)
-    adf = to_adf(lines, make_cleaner(cfg.get("stripRefs")))
-    if cfg.get("stripRefs"):
-        left = re.findall(rf"\b(?:{cfg['stripRefs']})\b", json.dumps(adf))
-        if left:
-            print(f"warning: {args.title!r} keeps {sorted(set(left))} after stripRefs", file=sys.stderr)
+    refuse_session_refs("\n".join([args.title, *lines]), cfg, args.title)
+    adf = to_adf(lines)
     epic = cfg.get("epic", {})
     if args.kind == "spec":
         kind, labels = epic.get("type", "Epic"), list(epic.get("labels", []))
@@ -312,13 +324,31 @@ def refs(args):
         sys.stdout.write(markdown_refs(args.body, ref))
         return
     _, lines = body_lines(args.body, cfg)
-    adf = to_adf(lines, make_cleaner(cfg.get("stripRefs")), ref)
-    if not found:
+    refuse_session_refs("\n".join(lines), cfg, args.body)
+    adf = to_adf(lines, ref)
+    if not found and not args.always:
         return
-    if not site:
+    if found and not site:
         print(f"warning: {args.body}: no \"site\" in the config, so {', '.join(sorted(set(found)))} stay plain keys "
               "(add \"site\" to link them)", file=sys.stderr)
     json.dump(adf, sys.stdout, ensure_ascii=False)
+
+
+def check(args):
+    cfg = load_config(args.config)
+    _, lines = body_lines(args.body, cfg)
+    refuse_session_refs("\n".join([args.title, *lines]), cfg, args.title)
+
+
+def without_local_ids(node):
+    if isinstance(node, dict):
+        return {k: without_local_ids(v) for k, v in node.items() if k != "localId"}
+    return [without_local_ids(x) for x in node] if isinstance(node, list) else node
+
+
+def digest(args):
+    doc = without_local_ids(json.loads(Path(args.file).read_text()))
+    print(hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()[:16])
 
 
 def main():
@@ -337,9 +367,16 @@ def main():
     r.add_argument("--map", required=True)
     r.add_argument("--config")
     r.add_argument("--placeholder", action="store_true")
+    r.add_argument("--always", action="store_true")
     r.add_argument("--format", choices=["adf", "markdown"], default="adf")
+    c = sub.add_parser("check")
+    c.add_argument("--title", required=True)
+    c.add_argument("--body", required=True)
+    c.add_argument("--config")
+    h = sub.add_parser("digest")
+    h.add_argument("--file", required=True)
     args = ap.parse_args()
-    payload(args) if args.cmd == "payload" else refs(args)
+    {"payload": payload, "refs": refs, "check": check, "digest": digest}[args.cmd](args)
 
 
 if __name__ == "__main__":

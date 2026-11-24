@@ -10,7 +10,7 @@ when it does not apply; keep every other section, in this order.
 
 ## How it works
 
-<the explanation, from the whole to the parts. Add a diagram when 3 or more parts interact.>
+<the explanation, from the whole to the parts.>
 
 ## Why it works this way
 

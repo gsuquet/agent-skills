@@ -1,0 +1,21 @@
+{
+  "name": "gs",
+  "version": "1.0.0+ec2f83f6",
+  "description": "Every skill of this repository, each as a plugin with its own version.",
+  "author": {
+    "name": "Gabriel Suquet",
+    "url": "https://github.com/gsuquet"
+  },
+  "dependencies": [
+    "describe-change",
+    "diagnose",
+    "handoff",
+    "interview",
+    "orchestrate",
+    "run-retro",
+    "write-docs",
+    "write-for-agents",
+    "write-skill",
+    "write-tickets"
+  ]
+}

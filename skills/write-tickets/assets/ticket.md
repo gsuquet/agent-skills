@@ -23,7 +23,8 @@ Blocked by: <draft numbers, comma-separated, for example 01, 03; or None>
 <decisions, constraints and seams from the spec that this ticket needs, or None.>
 ```
 
-- Each blocker has a smaller number than the ticket it blocks.
+- Each blocker has a smaller number than the ticket it blocks, except a ticket added after
+  publication: published drafts are never renumbered.
 - Write each acceptance criterion as a command, test or observation an agent runs, with the result
   it expects.
 - Leave out file paths and code, as in the spec.

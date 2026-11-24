@@ -17,7 +17,7 @@
     {"pattern": "\\(ADR", "label": "adr"},
     {"pattern": "\\(RFC", "label": "rfc"}
   ],
-  "stripRefs": "Q[0-9]+",
+  "sessionRefs": "Q[0-9]+",
   "dropLines": ["^Epic: ", "^- Jira links"],
   "blocksLinkType": "Blocks",
   "links": [
