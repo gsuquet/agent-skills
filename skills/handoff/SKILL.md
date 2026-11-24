@@ -1,6 +1,8 @@
 ---
 name: handoff
 description: Compact the current session into a handoff document that a new agent session, in Claude Code, Antigravity or another agent, continues from. Use when the user asks for a handoff, to hand over the work, or to continue in a new session.
+metadata:
+  version: 0.1.0
 ---
 
 # Handoff

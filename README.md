@@ -4,6 +4,21 @@ Agent skills in the [Agent Skills](https://agentskills.io) format, one folder pe
 [`skills/`](skills/). The same folders work in Claude Code, Antigravity and other agents that read
 `SKILL.md`.
 
+## Skills
+
+| Skill | Use it to |
+| ----- | --------- |
+| [`interview`](skills/interview/SKILL.md) | settle every decision of a plan in rounds of questions |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | run a session as an orchestrator of subagents |
+| [`diagnose`](skills/diagnose/SKILL.md) | find a bug's cause from a check that reproduces it |
+| [`describe-change`](skills/describe-change/SKILL.md) | write a PR or MR body |
+| [`write-tickets`](skills/write-tickets/SKILL.md) | split work into tickets on GitHub, GitLab or Jira |
+| [`write-docs`](skills/write-docs/SKILL.md) | write human docs, RFCs and ADRs |
+| [`write-for-agents`](skills/write-for-agents/SKILL.md) | write anything an agent reads |
+| [`write-skill`](skills/write-skill/SKILL.md) | add or change a skill in this repository |
+| [`handoff`](skills/handoff/SKILL.md) | hand a session over to another agent |
+| [`run-retro`](skills/run-retro/SKILL.md) | propose improvements after a session |
+
 ## Install in Claude Code
 
 The repository is a plugin marketplace. Each skill is a plugin, and the `all` plugin holds every skill.
@@ -19,7 +34,8 @@ Install `all` or single skills, not both: a skill would load twice. Plugin skill
 `/<plugin>:<skill>`, for example `/all:write-skill`.
 
 Update: `claude plugin update <plugin>@gsuquet-skills`, or enable auto-update for the marketplace in
-`/plugin` > Marketplaces.
+`/plugin` > Marketplaces. Auto-update is off by default for third-party marketplaces such as this one.
+See [Versions](#versions) for when an update brings changes.
 
 ## Install in other agents
 
@@ -56,6 +72,26 @@ Follow [`skills/write-skill/SKILL.md`](skills/write-skill/SKILL.md), then:
 mise run marketplace  # regenerate .claude-plugin/marketplace.json
 mise run lint
 ```
+
+## Versions
+
+Each skill carries a [semantic version](https://semver.org) in its frontmatter, the single source of
+its version:
+
+```yaml
+metadata:
+  version: 0.1.0
+```
+
+`mise run marketplace` copies it into the skill's plugin in `.claude-plugin/marketplace.json`.
+Claude Code updates a single-skill plugin only when that version changes. The `all` plugin has no
+version, so it updates on every commit
+([version resolution](https://code.claude.com/docs/en/plugins/loading.md#versions-and-updates)).
+
+To bump a changed skill, run `mise run bump -- <skill>` (`--help` for the rules). It derives the
+level from the Conventional Commits that changed the skill since `origin/main`: `fix` is a patch,
+`feat(<skill>)` a minor, `!` or `BREAKING CHANGE` a major. `mise run lint` fails when a skill changed
+but its version did not rise.
 
 ## Credits
 

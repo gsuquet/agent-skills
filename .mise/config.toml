@@ -9,6 +9,10 @@ typos = '1.51.1'
 description = "Generate .claude-plugin/marketplace.json from skills/"
 run = "scripts/marketplace.sh"
 
+[tasks.bump]
+description = "Raise a skill's version from its commits: mise run bump -- <skill> [--dry-run]"
+run = "scripts/bump.sh"
+
 [tasks.lint]
 description = "Run every check (the Lint workflow runs the same task)"
 run = [

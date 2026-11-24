@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Subagent report",
+  "description": "The Report format of assets/brief.md as JSON. scripts/report-to-md.sh turns it into the markdown that scripts/check-report.sh reads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "links", "checks", "judgement_calls", "unverified", "requests"],
+  "properties": {
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": { "type": "string", "enum": ["done", "partly done", "blocked"] },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "links": {
+      "description": "Branch, worktree, commit SHA, PR/MR URL, each file changed or source read.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "result", "output"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "result": { "type": "string", "enum": ["pass", "fail"] },
+          "output": { "type": "string", "description": "The exact failing output; empty on pass." }
+        }
+      }
+    },
+    "judgement_calls": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "unverified": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "requests": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}
