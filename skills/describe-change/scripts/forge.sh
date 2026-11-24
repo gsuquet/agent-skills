@@ -6,7 +6,7 @@ set -euo pipefail
 usage() {
     cat << 'EOF'
 Usage:
-  forge.sh create --title <title> [--base <branch>] <body-file>
+  forge.sh create --title <title> [--base <branch>] [--draft] <body-file>
   forge.sh update [--title <title>] [--number <n>] <body-file>
   forge.sh -h | --help
 
@@ -75,7 +75,7 @@ case "${action}" in
     *) die "unknown action '${action}' (create or update, see --help)" ;;
 esac
 
-title="" base="" number="" body=""
+title="" base="" number="" body="" draft=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -t | --title | -b | --base | -n | --number)
@@ -87,6 +87,7 @@ while [[ $# -gt 0 ]]; do
             esac
             shift
             ;;
+        -d | --draft) draft=true ;;
         -h | --help)
             usage
             exit 0
@@ -107,6 +108,7 @@ body="$(cd "$(dirname "${body}")" && pwd)/$(basename "${body}")"
 [[ "${action}" != create || -n "${title}" ]] || die "create needs --title"
 [[ "${action}" != create || -z "${number}" ]] || die "--number is only valid with update"
 [[ "${action}" != update || -z "${base}" ]] || die "--base is only valid with create"
+[[ "${action}" != update || "${draft}" == false ]] || die "--draft is only valid with create"
 [[ -z "${number}" || "${number}" =~ ^[0-9]+$ ]] || die "--number must be a number, got '${number}'"
 
 url="$(git remote get-url origin 2> /dev/null)" || die "no 'origin' remote in $(pwd)"
@@ -120,6 +122,7 @@ case "${forge}/${action}" in
     github/create)
         cmd=(gh pr create --title "${title}" --body-file "${body}")
         [[ -z "${base}" ]] || cmd+=(--base "${base}")
+        [[ "${draft}" == false ]] || cmd+=(--draft)
         ;;
     github/update)
         cmd=(gh pr edit)
@@ -130,6 +133,7 @@ case "${forge}/${action}" in
     gitlab/create)
         cmd=(glab mr create --title "${title}" --description-file "${body}" --yes)
         [[ -z "${base}" ]] || cmd+=(--target-branch "${base}")
+        [[ "${draft}" == false ]] || cmd+=(--draft)
         ;;
     gitlab/update)
         cmd=(glab mr update)

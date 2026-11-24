@@ -2,7 +2,7 @@
 name: describe-change
 description: Write the title and body of a pull request or merge request for a code, documentation, ADR or RFC change, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.
 metadata:
-  version: 0.2.0
+  version: 0.3.0
 ---
 
 # Describe a change
@@ -30,9 +30,10 @@ danger.
    for example `${TMPDIR:-/tmp}/pr-body.md`. Done when every section is filled, every rule of Every
    body is applied and the file is written.
 4. **Print the command.** Run `scripts/forge.sh create --title "<title>" <file>` for a new PR/MR
-   (add `--base <branch>` when the base is not the default branch), or `scripts/forge.sh update
-   <file>` for the existing one of the current branch (add `--number <n>` for any other one). It
-   prints the `gh` or `glab` command for the forge of `origin`. Done when the command is printed.
+   (add `--base <branch>` when the base is not the default branch, `--draft` when the user or
+   another skill asks for a draft), or `scripts/forge.sh update <file>` for the existing one of the
+   current branch (add `--number <n>` for any other one). It prints the `gh` or `glab` command for
+   the forge of `origin`. Done when the command is printed.
 5. **Finish.** When the user asked to open or update the PR/MR, run the printed command and show the
    URL. Otherwise show the title, the body and the printed command. Done when one of the two is sent.
 
