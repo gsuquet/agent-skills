@@ -8,13 +8,17 @@ a live tracker. Everything marked `(unverified)` comes from documentation or mem
 
 One row per published item, tab-separated: `<draft> <id> <url>`. Special rows: `tracker <name>
 <project>` (written first; a re-run on another tracker stops) and, on GitLab, `spec-tasks <count>`
-(how many tickets the spec task list holds), and on Jira `refs-NN 1 -` (the description of ticket
-NN had its references rewritten). To recover from an issue created without a row (the script says
+(how many tickets the spec task list holds), and `refs-NN 1 -` (the body of ticket NN had its
+`ticket NN` references rewritten). To recover from an issue created without a row (the script says
 so and exits 4), add its row by hand, then re-run. To rewrite the references again (for example
 after adding `site` to the config), delete the `refs-NN` rows, then re-run: the script skips every
 published draft and rewrites only those descriptions.
 
 ## GitHub (`gh` 2.103.3)
+
+GitHub links `#26` to issue or pull request 26 of the same repository, and `owner/repo#26` to
+another repository
+([autolinked references](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/autolinked-references-and-urls)).
 
 | Operation | Command | Status |
 | --- | --- | --- |
@@ -22,6 +26,7 @@ published draft and rewrites only those descriptions.
 | Parent | `--parent <spec>`: the ticket is a sub-issue of the spec | in `--help` |
 | Blocking | `--blocked-by <n>,<n>` | in `--help` |
 | Labels | `--label <name>`, repeated; existence checked with `gh label list --json name` | in `--help` |
+| Ticket references | `gh issue edit <n> --body-file <f>`, `<f>` with each `ticket NN` rewritten to `#<n>` by `scripts/jira-payload.py refs --format markdown` | in `--help` |
 | Issue id | last `https://.../issues/<n>` URL in the output | output format (unverified) |
 
 - Sub-issues and issue dependencies need the repository to have them enabled; a repository without
@@ -43,6 +48,7 @@ On another forge or on Jira these are plain text, hence full URLs in the drafts.
 | Blocking | `Blocked by: #<iid>` line in the description, always; then `glab api --method POST projects/:id/issues/<iid>/links -F target_project_id=<id> -F target_issue_iid=<blocker> -f link_type=is_blocked_by` | `glab api` in `--help`; the endpoint and `link_type` values from the GitLab issue links API (unverified) |
 | Project id | `glab api projects/:id`, field `.id` | `:id` placeholder in `--help` |
 | Labels | `--label <name>`, repeated; existence checked with `glab label list --output json`, page by page | in `--help` |
+| Ticket references | `glab issue update <iid> --description-file <f>`, `<f>` with each `ticket NN` rewritten to `#<iid>` | in `--help` |
 | Issue id | last `https://.../-/issues/<n>` URL in stdout or stderr | output format (unverified) |
 
 Tier limits, all (unverified):
