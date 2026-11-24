@@ -9,7 +9,8 @@ a live tracker. Everything marked `(unverified)` comes from documentation or mem
 One row per published item, tab-separated: `<draft> <id> <url>`. Special rows: `tracker <name>
 <project>` (written first; a re-run on another tracker stops) and, on GitLab, `spec-tasks <count>`
 (how many tickets the spec task list holds), and `refs-NN 1 -` (the body of ticket NN had its
-`ticket NN` references rewritten). To recover from an issue created without a row (the script says
+`ticket NN` references rewritten) and, on Jira, `base-NN <Jira version> <draft version>` (hashes of
+the title and description read back right after the script wrote them, for `--sync`). To recover from an issue created without a row (the script says
 so and exits 4), add its row by hand, then re-run. To rewrite the references again (for example
 after adding `site` to the config), delete the `refs-NN` rows, then re-run: the script skips every
 published draft and rewrites only those descriptions.
@@ -67,7 +68,9 @@ Tier limits, all (unverified):
 | Parent | `parentIssueId` (default), or the epic key in a custom field (`epicLink` in the config) | in `--generate-json`; that either one sets the epic is unverified |
 | Custom fields | `additionalAttributes: {"customfield_<id>": <value>}` | in `--generate-json` |
 | Blocking | `Blocked by: <KEY>-<n>` line in the description, always; then `acli jira workitem link create --out <ticket> --in <blocker> --type Blocks --yes` (`--in` blocks `--out`: see below) | run |
-| Link check | `acli jira workitem view <ticket> --json --fields issuelinks`: the blocker must be the `inwardIssue` of a `Blocks` link | `--fields` in `--help`; the JSON shape (unverified) |
+| Link check | `acli jira workitem view <ticket> --json --fields issuelinks`: links at `.fields.issuelinks[]`, each with `id`, `type.name` and one of `inwardIssue` (it blocks the ticket) or `outwardIssue` (the ticket blocks it) | run |
+| Link delete | `acli jira workitem link delete --id <link-id> --yes` | run |
+| Sync | `acli jira workitem view <key> --json --fields summary,description`, then `acli jira workitem edit --key <key> --summary <t> --description-file <adf.json> --yes` | the JSON shape and `--summary` (unverified): the script stops when a field is missing, and checks the title after the edit |
 | Link types | `acli jira workitem link type` lists the names the site accepts (`Blocks`, `Relates`, ...) | run |
 | Ticket references | `acli jira workitem edit --key <key> --description-file <adf.json> --yes` | in `--help` |
 | Labels | `labels` in the payload; no existence check: Jira creates a label on first use | (unverified) |
@@ -96,30 +99,21 @@ Tier limits, all (unverified):
   message prints "X Blocks Y". The script passes the blocker as `--in` and the blocked ticket as
   `--out`, prints the intended "A blocks B" in the dry run, and reads back the first link of each run:
   it exits 4 when Jira shows that link inverted. Never judge a link by the success message.
-- `acli jira workitem link delete --id <link-id>` asks for confirmation and waits on the prompt
-  forever when stdin is not a terminal. Always pass `--yes`, then check that the link is gone.
+- `acli jira workitem link delete --id <link-id>` without `--yes` asks for confirmation and waits on
+  the prompt forever when stdin is not a terminal.
 
 ### Inverted Blocks links
 
-Drafts number each blocker below the tickets it blocks, so a `Blocks` link from a higher ticket
-number to a lower one is inverted. To repair a run published with inverted links:
+The `Blocked by:` lines of the drafts give the direction, not the ticket numbers: a ticket added
+later can block a lower number. Run the script with `--verify-links`: it prints each inverted link,
+and `--apply` deletes it and creates it the right way round.
 
-1. Find them. For each ticket key in `map.tsv`, list the tickets it blocks with their link id:
+### Sync limits
 
-   ```bash
-   acli jira workitem view <KEY> --json --fields issuelinks |
-     jq -r '(.fields.issuelinks // .issuelinks // [])[]
-       | select(.type.name == "Blocks" and .outwardIssue) | [.id, .outwardIssue.key] | @tsv'
-   ```
-
-   The fields `id`, `type.name`, `inwardIssue` and `outwardIssue` follow the Jira REST API; that
-   acli prints them so is (unverified). A row whose key belongs to a lower-numbered draft (a blocker of `<KEY>` in its `Blocked by:`
-   line) is inverted.
-2. Delete each inverted link, then check it is gone:
-   `acli jira workitem link delete --id <link-id> --yes`.
-3. Recreate it the right way round, the blocker in `--in`:
-   `acli jira workitem link create --out <blocked> --in <blocker> --type Blocks --yes`. Check with
-   the command of step 1 on `<blocked>` that the blocker is now its `inwardIssue`.
+- Jira has no conditional edit: a change made between the last read and the write of one issue is
+  overwritten.
+- An issue published before `base-NN` rows existed is a conflict as soon as it differs from its draft.
+- `--sync` writes the title and the description only. Labels, fields and the epic stay as they are.
 
 ### Jira config (`--config <file.json>`)
 
@@ -139,7 +133,7 @@ Project rules that flags do not cover. Every key is optional; start from
 | `labels` | Labels of every ticket, added to `--label`. |
 | `metaLabels` | Header fields whose value becomes a label: `["Component"]` reads `Component: infra` in a `Key: value · Key: value` line before the first `##`. |
 | `titleLabels` | `[{"pattern": "\\(ADR", "label": "adr"}]`: a label for each title that matches. |
-| `stripRefs` | References to remove from descriptions, for example `Q[0-9]+` for session question numbers, with the brackets and commas around them. |
+| `sessionRefs` | References refused in titles and descriptions, outside code and URLs (default `Q[0-9]+`, session question numbers; `""` refuses none). A quarter with its year (`Q4 2026`) is never refused. The old name `stripRefs` sets the same refusal: nothing is removed from the text any more. |
 | `dropLines` | Lines to remove from descriptions, for example a header line or a dependency line that the tracker links replace. A heading left empty goes too. |
 | `blocksLinkType` | Name of the blocking link type (default `Blocks`). |
 | `links` | Extra links made when the ticket is created: `[{"ticket": "18", "type": "Relates", "key": "PROJ-123"}]` reads "18 relates to PROJ-123"; `"direction": "in"` reads "PROJ-123 relates to 18". That `--in`/`--out` work for other types as for `Blocks` (below) is (unverified). |
