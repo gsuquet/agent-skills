@@ -96,9 +96,8 @@ Tier limits, all (unverified):
   message prints "X Blocks Y". The script passes the blocker as `--in` and the blocked ticket as
   `--out`, prints the intended "A blocks B" in the dry run, and reads back the first link of each run:
   it exits 4 when Jira shows that link inverted. Never judge a link by the success message.
-- `acli jira workitem link delete --id <link-id>` deletes the link, then hangs without exiting. Run
-  every delete under a timeout: `timeout 30 acli ...` (`gtimeout` from GNU coreutils where `timeout` is missing), then
-  check that the link is gone.
+- `acli jira workitem link delete --id <link-id>` asks for confirmation and waits on the prompt
+  forever when stdin is not a terminal. Always pass `--yes`, then check that the link is gone.
 
 ### Inverted Blocks links
 
@@ -116,8 +115,8 @@ number to a lower one is inverted. To repair a run published with inverted links
    The fields `id`, `type.name`, `inwardIssue` and `outwardIssue` follow the Jira REST API; that
    acli prints them so is (unverified). A row whose key belongs to a lower-numbered draft (a blocker of `<KEY>` in its `Blocked by:`
    line) is inverted.
-2. Delete each inverted link under a timeout, then check it is gone:
-   `timeout 30 acli jira workitem link delete --id <link-id>`.
+2. Delete each inverted link, then check it is gone:
+   `acli jira workitem link delete --id <link-id> --yes`.
 3. Recreate it the right way round, the blocker in `--in`:
    `acli jira workitem link create --out <blocked> --in <blocker> --type Blocks --yes`. Check with
    the command of step 1 on `<blocked>` that the blocker is now its `inwardIssue`.
