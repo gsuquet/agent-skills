@@ -7,6 +7,8 @@ usage() {
 Usage:
   publish-tickets.sh [--tracker github|gitlab|jira] [--project <KEY>] [--label <name>]...
                      [--config <file.json>] [--max <n>] [--dry-run] <draft-dir>
+  publish-tickets.sh --sync [--apply] [--accept <NN>=<version>]... [<options>] <draft-dir>
+  publish-tickets.sh --verify-links [--apply] [<options>] <draft-dir>
   publish-tickets.sh -h | --help
 
 Run it from the repository the issues belong to. Publishes the drafts of <draft-dir>:
@@ -16,8 +18,11 @@ and appends each published draft to <draft-dir>/map.tsv (draft, issue id, URL). 
 map.tsv is skipped, so a re-run continues where a failed run stopped.
 
 Draft format: the first line is "# <title>". A ticket holds exactly one "Blocked by: 01, 03" or
-"Blocked by: None" line ("none" also works), and each blocker has a smaller number than the ticket. The line is
+"Blocked by: None" line ("none" also works). Blockers are published first; a cycle is refused. The line is
 rewritten with the issue references before publishing; the files are never changed.
+
+A session reference such as a question number (Q23) in a title or a body is refused before anything
+is published.
 
 Tracker, first match wins:
   1. --tracker (jira also needs --project <KEY>, or a jira line in AGENTS.md);
@@ -56,12 +61,28 @@ Options:
   --dry-run         Print every command and run none. Rendered bodies are kept in a temporary
                     folder, printed at the end. map.tsv is not written.
 
+Jira only, on a folder that is already published. Both read Jira, and write only with --apply:
+  --sync            Create the new drafts, and set the title and description of each published
+                    draft that changed. An issue that changed on Jira since the script last wrote
+                    it, or that has no recorded version, is a conflict: reported, not written. A
+                    published number without a draft is reported as cancelled, nothing more.
+                    Not with --max.
+  --accept <NN>=<version>
+                    With --sync: replace that Jira version, shown by a conflict, with the draft
+                    (spec for the spec). Refused when Jira changed again since. Repeatable.
+  --verify-links    Compare the blocking links on Jira with the "Blocked by:" lines: print the
+                    missing, extra and inverted ones. --apply deletes the extra and inverted
+                    links, then creates the missing ones. A link is deleted only when both its
+                    issues have a draft here.
+  --apply           Write the changes of --sync or --verify-links.
+
 Exit codes:
   0  published, or printed with --dry-run
   1  bad usage or invalid drafts
   2  no tracker found: ask the user which tracker to use
   3  missing command (gh, glab, acli, jq) or missing label
   4  a tracker command failed: map.tsv lists what was published; fix the cause and re-run
+  5  --sync left a conflict, or --verify-links found a difference it did not fix
 EOF
 }
 
@@ -109,22 +130,31 @@ forge_of_host() {
 }
 # END shared:forge-detect
 
-tracker="" project="" config="" max="" dry_run=false dir=""
-labels=()
+tracker="" project="" config="" max="" dry_run=false dir="" mode=publish apply=false
+labels=() accepts=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --tracker | --project | --label | --config | --max)
+        --tracker | --project | --label | --config | --max | --accept)
             [[ $# -ge 2 && -n "$2" ]] || die 1 "$1 needs a value"
             case "$1" in
                 --tracker) tracker="$2" ;;
                 --project) project="$2" ;;
                 --config) config="$2" ;;
                 --max) max="$2" ;;
+                --accept)
+                    [[ "$2" =~ ^([0-9]{2}|spec)=[0-9a-f]{16}$ ]] || die 1 "--accept needs <NN>=<version> as printed by --sync"
+                    accepts+=("$2")
+                    ;;
                 *) labels+=("$2") ;;
             esac
             shift
             ;;
         --dry-run) dry_run=true ;;
+        --apply) apply=true ;;
+        --sync | --verify-links)
+            [[ "${mode}" == publish || "${mode}" == "${1#--}" ]] || die 1 "--sync and --verify-links do not go together"
+            mode="${1#--}"
+            ;;
         -h | --help)
             usage
             exit 0
@@ -143,6 +173,14 @@ done
 dir="$(cd "${dir}" && pwd)"
 map="${dir}/map.tsv"
 [[ -z "${max}" || "${max}" =~ ^[1-9][0-9]*$ ]] || die 1 "--max needs a positive number"
+[[ "${mode}" == sync || ${#accepts[@]} -eq 0 ]] || die 1 "--accept needs --sync"
+if [[ "${mode}" == publish ]]; then
+    [[ "${apply}" == false ]] || die 1 "--apply needs --sync or --verify-links"
+else
+    [[ "${apply}" == false || "${dry_run}" == false ]] || die 1 "--apply and --dry-run do not go together"
+    [[ -z "${max}" ]] || die 1 "--max is only valid when publishing"
+    [[ "${apply}" == true ]] || dry_run=true
+fi
 if [[ -n "${config}" ]]; then
     [[ -f "${config}" ]] || die 1 "config '${config}' not found"
     config="$(cd "$(dirname "${config}")" && pwd)/$(basename "${config}")"
@@ -203,6 +241,7 @@ case "${tracker}" in
     gitlab) needed=(glab jq python3) ;;
     jira) needed=(acli jq python3) ;;
 esac
+[[ "${mode}" == publish || "${tracker}" == jira ]] || die 1 "--${mode} supports only jira"
 for cmd in "${needed[@]}"; do
     if ! command -v "${cmd}" > /dev/null; then
         [[ "${cmd}" != acli ]] || die 3 "acli not found: install the Atlassian CLI (https://developer.atlassian.com/cloud/acli/) and run 'acli jira auth login', or publish to another tracker"
@@ -281,11 +320,6 @@ for file in "${dir}"/*.md; do
         for b in $(tr ',' ' ' <<< "${value}"); do
             [[ "${b}" =~ ^[0-9]{1,2}$ ]] || die 1 "${file}: blocker '${b}' is not a draft number (Blocked by: 01, 03 or None)"
             b="$(printf '%02d' "$((10#${b}))")"
-            [[ "$((10#${b}))" -lt "$((10#${num}))" ]] ||
-                die 1 "${file}: blocker ${b} must have a smaller number than ${num} (number drafts in dependency order)"
-            found=false
-            for n in ${t_num[@]+"${t_num[@]}"}; do [[ "${n}" != "${b}" ]] || found=true; done
-            [[ "${found}" == true ]] || die 1 "${file}: blocker ${b} has no draft"
             blockers="${blockers:+${blockers} }${b}"
         done
     fi
@@ -296,6 +330,32 @@ for file in "${dir}"/*.md; do
     t_block+=("${blockers}")
 done
 [[ ${#t_num[@]} -gt 0 ]] || die 1 "no NN-<slug>.md ticket draft in ${dir}"
+
+# Publication order: the lowest number whose blockers are all placed. A draft added later can block
+# a lower number, because published drafts are never renumbered.
+o_num=() o_file=() o_title=() o_block=() placed=" "
+all=" ${t_num[*]} "
+while [[ ${#o_num[@]} -lt ${#t_num[@]} ]]; do
+    progress=false
+    for i in "${!t_num[@]}"; do
+        [[ "${placed}" != *" ${t_num[${i}]} "* ]] || continue
+        ready=true
+        for b in ${t_block[${i}]}; do
+            [[ "${all}" == *" ${b} "* ]] || die 1 "${t_file[${i}]}: blocker ${b} has no draft"
+            [[ "${placed}" == *" ${b} "* ]] || ready=false
+        done
+        [[ "${ready}" == true ]] || continue
+        placed="${placed}${t_num[${i}]} "
+        o_num+=("${t_num[${i}]}")
+        o_file+=("${t_file[${i}]}")
+        o_title+=("${t_title[${i}]}")
+        o_block+=("${t_block[${i}]}")
+        progress=true
+        break
+    done
+    [[ "${progress}" == true ]] || die 1 "the 'Blocked by:' lines form a cycle among the drafts not in:${placed}"
+done
+t_num=("${o_num[@]}") t_file=("${o_file[@]}") t_title=("${o_title[@]}") t_block=("${o_block[@]}")
 
 # --- Map ----------------------------------------------------------------------------------------
 
@@ -345,11 +405,15 @@ if [[ -n "${recorded}" && "${recorded}" != "${tracker}" ]]; then
     die 1 "${map} was published to ${recorded}, not ${tracker}: use --tracker ${recorded}, or move map.tsv away to publish again"
 fi
 
+[[ "${mode}" == publish || -n "${recorded}" ]] || die 1 "nothing published yet: ${map} has no tracker row"
+
 # --- Commands -----------------------------------------------------------------------------------
 
 tmp="${TMPDIR:-/tmp}"
 work="$(mktemp -d "${tmp%/}/publish-tickets.XXXXXX")"
-[[ "${dry_run}" == true ]] || trap 'rm -rf "${work}"' EXIT
+conflicts=0
+# Kept in a dry run, and when a conflict message names files in it.
+[[ "${dry_run}" == true ]] || trap '[[ ${conflicts} -gt 0 ]] || rm -rf "${work}"' EXIT
 
 print_cmd() {
     printf '%q ' "$@" | sed 's/ $//'
@@ -411,7 +475,7 @@ jira_link() {
     # (the blocked ticket) in --out. Do not trust the success message: check_block_link reads it back.
     print_cmd acli jira workitem link create --out "${object}" --in "${subject}" --type "${type}" --yes
     [[ "${dry_run}" == false ]] || return 0
-    acli jira workitem link create --out "${object}" --in "${subject}" --type "${type}" --yes > /dev/null && return 0
+    acli jira workitem link create --out "${object}" --in "${subject}" --type "${type}" --yes > /dev/null < /dev/null && return 0
     warn "acli refused the link above: the 'Blocked by:' line in the body still records it"
     return 1
 }
@@ -428,12 +492,12 @@ check_block_link() {
     # On the blocked ticket, Jira lists the blocker as inwardIssue ("is blocked by"); as
     # outwardIssue ("blocks") when the link is inverted.
     state="$(jq -r --arg k "${blocker}" --arg t "${blocks_type}" '
-        [(.fields.issuelinks // .issuelinks // [])[] | select(.type.name == $t)
+        [(.fields.issuelinks // [])[] | select(.type.name == $t)
             | if .inwardIssue.key == $k then "ok" elif .outwardIssue.key == $k then "inverted" else empty end]
-        | .[0] // "missing"' <<< "${out}" 2> /dev/null || echo unreadable)"
+        | if index("ok") then "ok" else .[0] // "missing" end' <<< "${out}" 2> /dev/null || echo unreadable)"
     case "${state}" in
         ok) echo "  verified: ${blocker} blocks ${blocked}" ;;
-        inverted) die 4 "INVERTED LINK: Jira shows ${blocked} blocks ${blocker}, the opposite of the draft. Stop publishing and fix the links: see 'Inverted Blocks links' in references/trackers.md" ;;
+        inverted) die 4 "INVERTED LINK: Jira shows ${blocked} blocks ${blocker}, the opposite of the draft. Stop publishing: see 'Inverted Blocks links' in references/trackers.md" ;;
         *) warn "could not verify the direction of the link ${blocker} -> ${blocked} (${state}): check on Jira that ${blocked} 'is blocked by' ${blocker} before the next run" ;;
     esac
 }
@@ -465,6 +529,220 @@ blocked_refs() {
     for b in ${t_block[$1]}; do refs="${refs:+${refs}, }$(ref_text "${b}")"; done
     echo "${refs:-None}"
 }
+
+# --- Jira versions ------------------------------------------------------------------------------
+
+# Writes {summary, description} of issue $1 as Jira holds it now to $2. Returns 1 when unreadable.
+jira_live() {
+    acli jira workitem view "$1" --json --fields summary,description < /dev/null |
+        jq -e 'select((.fields.summary | type) == "string" and (.fields | has("description")))
+            | {summary: .fields.summary, description: .fields.description}' > "$2"
+}
+
+digest() {
+    python3 "${script_dir}/jira-payload.py" digest --file "$1" || die 1 "cannot hash $1"
+}
+
+# Writes the description of ticket index $1 to ${work}/NN.desc.json, and {summary, description} to
+# ${work}/NN.draft.json.
+ticket_version() {
+    local num="${t_num[$1]}" args
+    render "${t_file[$1]}" "$(blocked_refs "$1")" "${work}/${num}.sync.md"
+    args=(refs --always --placeholder --body "${work}/${num}.sync.md" --map "${map}")
+    [[ -z "${config}" ]] || args+=(--config "${config}")
+    python3 "${script_dir}/jira-payload.py" "${args[@]}" > "${work}/${num}.desc.json" 2> "${work}/err" ||
+        die 1 "$(cat "${work}/err")"
+    draft_version "${num}" "${t_title[$1]}"
+}
+
+draft_version() {
+    jq --arg t "$2" '{summary: ($t | gsub("`"; "")), description: .}' "${work}/$1.desc.json" > "${work}/$1.draft.json"
+}
+
+# Records what Jira holds right after the script wrote draft $1 (issue $2): map.tsv row
+# "base-NN <Jira version> <draft version>".
+record_base() {
+    [[ "${dry_run}" == false && "${tracker}" == jira ]] || return 0
+    if jira_live "$2" "${work}/$1.live.json"; then
+        map_put "base-$1" "$(digest "${work}/$1.live.json")" "$(digest "${work}/$1.draft.json")"
+    else
+        warn "cannot read $2 back: --sync will report it as a conflict"
+        map_put "base-$1" unreadable -
+    fi
+}
+
+# Succeeds unless Jira issue $2 differs from the version recorded for draft $1.
+unchanged_on_jira() {
+    local base
+    base="$(map_get "base-$1")"
+    [[ -n "${base}" && "${base}" != unreadable ]] || return 0
+    jira_live "$2" "${work}/$1.live.json" || die 4 "cannot read $2 from Jira"
+    [[ "$(digest "${work}/$1.live.json")" == "${base}" ]]
+}
+
+conflict() {
+    conflicts=$((conflicts + 1))
+    echo "conflict $1 ($2): $4. Not written. Jira: ${work}/$1.live.json, draft: ${work}/$1.draft.json"
+    echo "  merge the Jira text into the draft, then: --sync --accept $1=$3"
+}
+
+# Syncs draft $1, issue $2, from ${work}/$1.desc.json and ${work}/$1.draft.json.
+sync_issue() {
+    local key="$1" id="$2" live draft base base_draft accepted="" a cmd
+    jira_live "${id}" "${work}/${key}.live.json" || die 4 "cannot read ${id} from Jira: nothing written for it"
+    live="$(digest "${work}/${key}.live.json")" draft="$(digest "${work}/${key}.draft.json")"
+    base="$(map_get "base-${key}")"
+    base_draft="$([[ -f "${map}" ]] && awk -F '\t' -v k="base-${key}" '$1 == k { print $3; exit }' "${map}")"
+    for a in ${accepts[@]+"${accepts[@]}"}; do [[ "${a%%=*}" != "${key}" ]] || accepted="${a#*=}"; done
+    if [[ "${live}" == "${draft}" ]]; then
+        map_put "base-${key}" "${live}" "${draft}"
+        echo "same ${key}: ${id}"
+        return 0
+    elif [[ -n "${accepted}" ]]; then
+        if [[ "${accepted}" != "${live}" ]]; then
+            conflict "${key}" "${id}" "${live}" "changed on Jira since ${accepted}"
+            return 0
+        fi
+    elif [[ -z "${base}" || "${base}" == unreadable ]]; then
+        conflict "${key}" "${id}" "${live}" "differs from the draft, and no version is recorded"
+        return 0
+    elif [[ "${live}" != "${base}" && "${draft}" == "${base_draft}" ]]; then
+        echo "left ${key}: ${id} was edited on Jira, the draft did not change"
+        return 0
+    elif [[ "${live}" != "${base}" ]]; then
+        conflict "${key}" "${id}" "${live}" "edited on Jira, and the draft changed too"
+        return 0
+    elif [[ "${draft}" == "${base_draft}" ]]; then
+        echo "same ${key}: ${id}"
+        return 0
+    fi
+    echo "edit ${key}: ${id} (Jira: ${work}/${key}.live.json, draft: ${work}/${key}.draft.json)"
+    cmd=(acli jira workitem edit --key "${id}" --summary "$(jq -r .summary "${work}/${key}.draft.json")"
+    --description-file "${work}/${key}.desc.json" --yes)
+    print_cmd "${cmd[@]}"
+    [[ "${dry_run}" == false ]] || return 0
+    "${cmd[@]}" > /dev/null < /dev/null || die 4 "editing ${id} failed: run --sync again"
+    [[ "${key}" == spec ]] || map_put "refs-${key}" 1 -
+    record_base "${key}" "${id}"
+    [[ "$(jq -r .summary "${work}/${key}.live.json" 2> /dev/null)" == "$(jq -r .summary "${work}/${key}.draft.json")" ]] ||
+        die 4 "${id} does not hold the new title after the edit: check it on Jira"
+}
+
+# --- Verify links -------------------------------------------------------------------------------
+
+# Writes the differences between "Blocked by:" and Jira to ${work}/diff.tsv:
+# <missing|extra|inverted|cancelled> <blocker key> <blocked key> <link id>.
+diff_links() {
+    local i id b bid out
+    awk -F '\t' '$1 ~ /^[0-9][0-9]$/ { print "key\t" $1 "\t" $2 }' "${map}" > "${work}/links.tsv"
+    for i in "${!t_num[@]}"; do
+        printf 'draft\t%s\n' "${t_num[${i}]}" >> "${work}/links.tsv"
+        id="$(map_get "${t_num[${i}]}")"
+        if [[ -z "${id}" ]]; then
+            warn "draft ${t_num[${i}]} is not published: its links are not checked"
+            continue
+        fi
+        out="$(acli jira workitem view "${id}" --json --fields issuelinks < /dev/null)" || die 4 "cannot read the links of ${id}"
+        jq -r --arg k "${id}" --arg t "${blocks_type}" '
+            if (.fields | type) != "object" then error("no .fields") else . end
+            | (.fields.issuelinks // [])[] | select(.type.name == $t)
+            | if .inwardIssue then ["live", .inwardIssue.key, $k, .id] else ["live", $k, .outwardIssue.key, .id] end
+            | @tsv' <<< "${out}" >> "${work}/links.tsv" || die 4 "cannot read the links of ${id}: unexpected acli output"
+        for b in ${t_block[${i}]}; do
+            bid="$(map_get "${b}")"
+            [[ -z "${bid}" ]] || printf 'want\t%s\t%s\n' "${bid}" "${id}" >> "${work}/links.tsv"
+        done
+    done
+    awk -F '\t' -v OFS='\t' '
+        $1 == "key" { num[$3] = $2 }
+        $1 == "draft" { draft[$2] = 1 }
+        $1 == "want" { want[$2, $3] = 1; wn++; wb[wn] = $2; wd[wn] = $3 }
+        $1 == "live" && !seen[$4]++ { live[$2, $3] = 1; ln++; lb[ln] = $2; ld[ln] = $3; lid[ln] = $4 }
+        END {
+            for (i = 1; i <= ln; i++) {
+                if (!(lb[i] in num) || !(ld[i] in num) || ((lb[i], ld[i]) in want)) continue
+                kind = "extra"
+                if (!(num[lb[i]] in draft) || !(num[ld[i]] in draft)) kind = "cancelled"
+                else if ((ld[i], lb[i]) in want) kind = "inverted"
+                print kind, lb[i], ld[i], lid[i]
+            }
+            for (i = 1; i <= wn; i++) if (!((wb[i], wd[i]) in live)) print "missing", wb[i], wd[i], "-"
+        }' "${work}/links.tsv" > "${work}/diff.tsv"
+}
+
+verify_links() {
+    local kind blocker blocked link
+    diff_links
+    while IFS=$'\t' read -r kind blocker blocked link; do
+        echo "${kind}: ${blocker} blocks ${blocked}$([[ "${link}" == - ]] || echo " (link ${link})")"
+    done < "${work}/diff.tsv"
+    if [[ ! -s "${work}/diff.tsv" ]]; then
+        echo "links match the 'Blocked by:' lines"
+        return 0
+    fi
+    # Delete first: an inverted link would otherwise sit next to its replacement. An interrupted run
+    # is safe to repeat, the drafts hold every edge.
+    while IFS=$'\t' read -r kind blocker blocked link; do
+        [[ "${kind}" == extra || "${kind}" == inverted ]] || continue
+        print_cmd acli jira workitem link delete --id "${link}" --yes
+        [[ "${dry_run}" == false ]] || continue
+        # Without --yes, acli waits forever on a prompt when stdin is not a terminal.
+        acli jira workitem link delete --id "${link}" --yes > /dev/null < /dev/null || die 4 "deleting link ${link} failed"
+    done < "${work}/diff.tsv"
+    while IFS=$'\t' read -r kind blocker blocked link; do
+        [[ "${kind}" == missing ]] || continue
+        jira_link "${blocker}" "${blocks_type}" "${blocked}" || die 4 "creating the link failed: run --verify-links again"
+        [[ "${dry_run}" == true || "${block_checked}" == true ]] || check_block_link "${blocker}" "${blocked}"
+    done < "${work}/diff.tsv"
+    if [[ "${dry_run}" == false ]]; then
+        diff_links
+        if grep -qv '^cancelled' "${work}/diff.tsv"; then
+            cat "${work}/diff.tsv" >&2
+            die 4 "the links above still differ after the fix"
+        fi
+    fi
+    if [[ "${dry_run}" == true ]]; then
+        echo "Nothing written: --verify-links --apply runs the commands above."
+        return 5
+    elif [[ -s "${work}/diff.tsv" ]]; then
+        echo "Left: links of a ticket without a draft (cancelled), delete them by hand."
+        return 5
+    fi
+    echo "links fixed"
+}
+
+if [[ "${mode}" == verify-links ]]; then
+    verify_links || exit $?
+    exit 0
+fi
+
+# --- Session references -------------------------------------------------------------------------
+
+check_refs() {
+    local args=(check --title "$1" --body "$2")
+    [[ -z "${config}" ]] || args+=(--config "${config}")
+    python3 "${script_dir}/jira-payload.py" "${args[@]}"
+}
+
+bad=0
+if [[ -f "${dir}/spec.md" ]]; then
+    render "${dir}/spec.md" "" "${work}/check.md"
+    check_refs "${spec_title}" "${work}/check.md" || bad=$((bad + 1))
+elif [[ -n "${epic_file}" ]]; then
+    check_refs "${spec_title}" "${epic_file}" || bad=$((bad + 1))
+fi
+for i in "${!t_num[@]}"; do
+    render "${t_file[${i}]}" "" "${work}/check.md"
+    check_refs "${t_title[${i}]}" "${work}/check.md" || bad=$((bad + 1))
+done
+[[ ${bad} -eq 0 ]] || die 1 "${bad} draft(s) refused, nothing published"
+
+# Tickets published before this run: --sync compares them with Jira.
+was_published=" "
+for i in "${!t_num[@]}"; do
+    [[ -z "$(map_get "${t_num[${i}]}")" ]] || was_published="${was_published}${t_num[${i}]} "
+done
+spec_was_published="$(map_get spec)"
 
 # --- Labels -------------------------------------------------------------------------------------
 
@@ -522,6 +800,9 @@ if [[ "${has_spec}" == true ]]; then
             jira)
                 jira_payload "${work}/spec.json" --kind spec --title "${spec_title}" --body "${body}"
                 create spec acli jira workitem create --from-json "${work}/spec.json" --json
+                jq .description "${work}/spec.json" > "${work}/spec.desc.json"
+                draft_version spec "${spec_title}"
+                record_base spec "$(ref_id spec)"
                 ;;
         esac
     fi
@@ -567,6 +848,10 @@ for i in "${!t_num[@]}"; do
             ;;
     esac
     create "${num}" "${cmd[@]}"
+    if [[ "${tracker}" == jira && "${dry_run}" == false ]]; then
+        ticket_version "${i}"
+        record_base "${num}" "$(ref_id "${num}")"
+    fi
 
     for b in ${t_block[${i}]}; do
         case "${tracker}" in
@@ -606,6 +891,7 @@ if [[ "${stopped}" == false ]]; then
     for i in "${!t_num[@]}"; do
         num="${t_num[${i}]}"
         [[ -z "$(map_get "refs-${num}")" ]] || continue
+        [[ "${mode}" != sync || "${was_published}" != *" ${num} "* ]] || continue # sync_issue does it
         body="${work}/${num}.refs.md"
         out="${work}/${num}.refs.out"
         render "${t_file[${i}]}" "$(blocked_refs "${i}")" "${body}"
@@ -623,9 +909,48 @@ if [[ "${stopped}" == false ]]; then
         esac
         print_cmd "${cmd[@]}"
         [[ "${dry_run}" == false ]] || continue
+        if [[ "${tracker}" == jira ]] && ! unchanged_on_jira "${num}" "$(ref_id "${num}")"; then
+            warn "$(ref_id "${num}") was edited on Jira: its ticket references are not rewritten, see --sync"
+            continue
+        fi
         "${cmd[@]}" > /dev/null || die 4 "rewriting the ticket references of ${num} failed: re-run to retry"
         map_put "refs-${num}" 1 -
+        if [[ "${tracker}" == jira ]]; then
+            ticket_version "${i}"
+            record_base "${num}" "$(ref_id "${num}")"
+        fi
     done
+fi
+
+if [[ "${mode}" == sync ]]; then
+    echo
+    if [[ -n "${spec_was_published}" && -z "${epic_key}" ]]; then
+        : > "${work}/spec.sync.md"
+        if [[ -n "${epic_file}" ]]; then
+            cp "${epic_file}" "${work}/spec.sync.md"
+        elif [[ -f "${dir}/spec.md" ]]; then
+            render "${dir}/spec.md" "" "${work}/spec.sync.md"
+        fi
+        if [[ "${has_spec}" == true ]]; then
+            jira_payload "${work}/spec.json" --kind spec --title "${spec_title}" --body "${work}/spec.sync.md" > /dev/null
+            jq .description "${work}/spec.json" > "${work}/spec.desc.json"
+            draft_version spec "${spec_title}"
+            sync_issue spec "${spec_was_published}"
+        else
+            warn "the published spec ${spec_was_published} has no draft: left as it is"
+        fi
+    fi
+    for i in "${!t_num[@]}"; do
+        num="${t_num[${i}]}"
+        [[ "${was_published}" == *" ${num} "* ]] || continue
+        ticket_version "${i}"
+        sync_issue "${num}" "$(ref_id "${num}")"
+    done
+    while IFS=$'\t' read -r num id _; do
+        [[ "${num}" =~ ^[0-9]{2}$ ]] || continue
+        [[ "${all}" == *" ${num} "* ]] ||
+            warn "cancelled ${num}: ${id} has no draft. It is left as it is: close it or comment on it on Jira"
+    done < "${map}"
 fi
 
 # GitLab has no sub-issues on every tier: the spec lists its tickets as a task list instead.
@@ -660,3 +985,10 @@ for i in "${!t_num[@]}"; do
     list_line "${t_num[${i}]}" "${t_title[${i}]}"
 done
 [[ "${dry_run}" == false ]] || echo "Dry run: nothing published. Rendered bodies: ${work}"
+if [[ "${mode}" == sync ]]; then
+    echo "--sync does not change the links of published tickets: run --verify-links next."
+    if [[ ${conflicts} -gt 0 ]]; then
+        echo "${conflicts} conflict(s) left"
+        exit 5
+    fi
+fi

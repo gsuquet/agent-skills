@@ -27,13 +27,15 @@ that has not seen this session: no "as discussed", no "the above".
 
 ## Rules for your own commands
 
+- Run Git only in the worktree below, with `git -C <worktree path>` or after a `cd` in the same command.
+- Never bypass a hook (`SKIP=`, `--no-verify`): when one fails, stop and report its full output.
 - <rule for the commands the agent runs: allowed tools, network, installs, pushes>
 
 ## Files you may and may not touch
 
 - May touch: <paths, or a folder>
 - May not touch: <paths: shared files the main session integrates>
-- Worktree: <path> on branch <branch>, created from <base commit>
+- Worktree: <path, already created> on branch <branch>, created from <base commit>
 
 ## Finish condition
 
@@ -41,7 +43,7 @@ that has not seen this session: no "as discussed", no "the above".
 
 ## Report format
 
-Send this as your final message. Write `None.` in a section that has nothing.
+Send this as your final message, not as a file. Write `None.` in a section that has nothing.
 
 ```markdown
 ## Outcome
