@@ -1,0 +1,3 @@
+# Follow the "source" lines of the scripts, relative to the script folder.
+external-sources=true
+source-path=SCRIPTDIR

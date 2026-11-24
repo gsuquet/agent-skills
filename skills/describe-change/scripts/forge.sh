@@ -26,6 +26,7 @@ die() {
     exit 1
 }
 
+# BEGIN shared:forge-detect
 # Host part of a git remote URL: git@host:path, ssh://user@host[:port]/path or https://host/path.
 remote_host() {
     local url="$1" host
@@ -44,6 +45,19 @@ remote_host() {
     esac
     [[ -n "${host}" ]] && echo "${host}"
 }
+
+# Forge of a host: github for github.com, gitlab for a host containing "gitlab" or equal to
+# $GITLAB_HOST. Returns 1 for any other host.
+forge_of_host() {
+    if [[ "$1" == github.com ]]; then
+        echo github
+    elif [[ "$1" == *gitlab* || "$1" == "${GITLAB_HOST:-}" ]]; then
+        echo gitlab
+    else
+        return 1
+    fi
+}
+# END shared:forge-detect
 
 [[ $# -gt 0 ]] || {
     usage >&2
@@ -98,13 +112,8 @@ body="$(cd "$(dirname "${body}")" && pwd)/$(basename "${body}")"
 url="$(git remote get-url origin 2> /dev/null)" || die "no 'origin' remote in $(pwd)"
 host="$(remote_host "${url}")" || die "cannot read the host of origin '${url}'"
 
-if [[ "${host}" == github.com ]]; then
-    forge=github
-elif [[ "${host}" == *gitlab* || "${host}" == "${GITLAB_HOST:-}" ]]; then
-    forge=gitlab
-else
+forge="$(forge_of_host "${host}")" ||
     die "unknown forge '${host}': expected github.com or a GitLab host (set GITLAB_HOST=${host} for a GitLab host without 'gitlab' in its name)"
-fi
 
 cmd=()
 case "${forge}/${action}" in

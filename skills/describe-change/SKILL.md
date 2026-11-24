@@ -1,6 +1,8 @@
 ---
 name: describe-change
 description: Write the title and body of a pull request or merge request, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.
+metadata:
+  version: 0.1.0
 ---
 
 # Describe a change

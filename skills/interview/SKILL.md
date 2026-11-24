@@ -1,6 +1,8 @@
 ---
 name: interview
 description: Interview the user in rounds of numbered questions, each with a recommended answer, until every decision of a plan, design or idea is settled, then end with a decision summary and wait for confirmation. Use only when the user asks to be grilled or interviewed, or to stress-test or challenge a plan, design or decision. Do not start it on your own for a task that merely needs planning.
+metadata:
+  version: 0.1.0
 ---
 
 # Interview
@@ -54,3 +56,5 @@ find the facts.
 
 - Before recommending a location, name or convention, check the user's instruction files
   (AGENTS.md / CLAUDE.md chain) for an existing one.
+- Don't assume the issue tracker is the forge: ask which trackers the user works with before
+  designing detection.
