@@ -35,13 +35,16 @@ no users.
    Stop and wait for the user. On corrections, go back to step 5. Done when the user answers `ok`.
 7. **Write the drafts.** Write them to `$(git rev-parse --git-common-dir)/tickets/<slug>/`, `<slug>`
    naming the work in kebab-case: `spec.md` from step 4, and one `NN-<slug>.md` per ticket from
-   [assets/ticket.md](assets/ticket.md), `NN` being its breakdown number. When the user wants no
-   tracker, print the folder path and stop. Done when the folder holds one file per ticket, and
+   [assets/ticket.md](assets/ticket.md), `NN` being its breakdown number. Name a ticket of the
+   batch as `ticket NN`, and anything outside it (a merge request, an existing issue) as a Markdown
+   link with its full URL. When the user wants no tracker, print the folder path and stop. Done when the folder holds one file per ticket, and
    `spec.md` when step 2 said yes.
 8. **Publish.** From the repository root, run
    [scripts/publish-tickets.sh](scripts/publish-tickets.sh) `--dry-run <folder>`. Add `--tracker`
    (and `--project` for Jira) only when the user named a tracker, and `--label` only for labels the
-   user named. On exit 2, ask the user which tracker to use, then run again with `--tracker`. Check
+   user named. For Jira, add `--config <file>` when the user has one (custom fields, epic link,
+   label rules: [references/trackers.md](references/trackers.md)), and publish with `--max 1`
+   first, then ask the user to check that ticket on Jira before the full run. On exit 2, ask the user which tracker to use, then run again with `--tracker`. Check
    that the dry run creates one issue per draft with the blocking edges of the approved breakdown;
    when it does not, fix the drafts and dry-run again. Then run the same command without
    `--dry-run`. Read

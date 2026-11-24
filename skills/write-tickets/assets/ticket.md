@@ -27,3 +27,9 @@ Blocked by: <draft numbers, comma-separated, for example 01, 03; or None>
 - Write each acceptance criterion as a command, test or observation an agent runs, with the result
   it expects.
 - Leave out file paths and code, as in the spec.
+- Name another ticket of the batch as `ticket NN` (`tickets 02 and 05`): the script rewrites it to
+  the issue reference once every ticket is published, so the drafts stay tracker-neutral.
+- Write a reference outside the batch (a merge request, an existing issue) as a Markdown link with
+  its full URL, for example
+  `[MR !12](https://gitlab.example.com/example-group/app/-/merge_requests/12)`: a short form such as
+  `!12` or `#12` links only on its own forge.
