@@ -21,21 +21,44 @@ Agent skills in the [Agent Skills](https://agentskills.io) format, one folder pe
 
 ## Install in Claude Code
 
-The repository is a plugin marketplace. Each skill is a plugin, and the `all` plugin holds every skill.
+The repository is a plugin marketplace named `gsuquet`. Each skill is a plugin with its own version,
+and the `gs` plugin installs them all.
 
 ```bash
 claude plugin marketplace add gsuquet/agent-skills
 
-claude plugin install all@gsuquet-skills          # every skill
-claude plugin install write-skill@gsuquet-skills  # one skill
+claude plugin install gs@gsuquet           # every skill
+claude plugin install write-skill@gsuquet  # one skill
 ```
 
-Install `all` or single skills, not both: a skill would load twice. Plugin skills are invoked as
-`/<plugin>:<skill>`, for example `/all:write-skill`.
+Both ways, a skill is invoked as `/gs:<skill>`, for example `/gs:write-skill`. `claude plugin list`
+shows the version of each skill. A skill installed by `gs` cannot be disabled alone: to leave some
+out, install single skills instead.
 
-Update: `claude plugin update <plugin>@gsuquet-skills`, or enable auto-update for the marketplace in
-`/plugin` > Marketplaces. Auto-update is off by default for third-party marketplaces such as this one.
-See [Versions](#versions) for when an update brings changes.
+Update every installed skill: in `/plugin` > Marketplaces > `gsuquet`, choose **Update marketplace**, or
+turn on auto-update (off by default for third-party marketplaces such as this one). From a shell,
+`claude plugin update gs@gsuquet` only adds new skills; to update the skills too:
+
+```bash
+claude plugin marketplace update gsuquet
+claude plugin list --json | jq -r '.[].id | select(endswith("@gsuquet"))' | xargs -n 1 claude plugin update
+```
+
+Uninstall everything: `claude plugin uninstall gs@gsuquet`, then `claude plugin prune`.
+
+### Migrate from `gsuquet-skills`
+
+The marketplace was named `gsuquet-skills`, its bundle `all`, and skills were invoked as
+`/all:<skill>` or `/<skill>:<skill>`. Replace it; removing the marketplace uninstalls its plugins:
+
+```bash
+claude plugin marketplace remove gsuquet-skills
+claude plugin marketplace add gsuquet/agent-skills
+claude plugin install gs@gsuquet
+```
+
+Then rename `gsuquet-skills` in settings you keep elsewhere, such as dotfiles or a project's
+`enabledPlugins`, and `/all:<skill>` in your own prompts and permission rules.
 
 ## Install in other agents
 
@@ -69,7 +92,7 @@ replaces a folder that it did not install.
 Follow [`skills/write-skill/SKILL.md`](skills/write-skill/SKILL.md), then:
 
 ```bash
-mise run marketplace  # regenerate .claude-plugin/marketplace.json
+mise run marketplace  # regenerate the plugin manifests
 mise run lint
 ```
 
@@ -83,10 +106,18 @@ metadata:
   version: 0.1.0
 ```
 
-`mise run marketplace` copies it into the skill's plugin in `.claude-plugin/marketplace.json`.
-Claude Code updates a single-skill plugin only when that version changes. The `all` plugin has no
-version, so it updates on every commit
-([version resolution](https://code.claude.com/docs/en/plugins/loading.md#versions-and-updates)).
+`mise run marketplace` copies it into the skill's plugin in `.claude-plugin/marketplace.json`, and
+Claude Code updates that plugin only when the version changes
+([version resolution](https://code.claude.com/docs/en/plugins/loading.md#versions-and-updates)). The
+version of `gs` ends with a hash of the skill names: it changes only when a skill is added, renamed
+or removed.
+
+The `gs:` prefix is the `name` in the root `.claude-plugin/plugin.json`, which every skill plugin
+shares ([entry name and manifest name](https://code.claude.com/docs/en/plugins/loading.md#entry-name-and-manifest-name)).
+That file must not set a `version`: it would override the version of every skill.
+
+Each skill plugin caches the whole repository, so a link to another skill resolves to that skill as
+it was when the linking skill was last updated.
 
 To bump a changed skill, run `mise run bump -- <skill>` (`--help` for the rules). It derives the
 level from the Conventional Commits that changed the skill since `origin/main`: `fix` is a patch,
