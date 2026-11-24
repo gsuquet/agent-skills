@@ -10,6 +10,10 @@ write `None.` in a section that has nothing.
 |---|---|---|---|
 | Q<n> | <title> | <chosen answer> | <one line> |
 
+## Deferred
+
+- Q<n> <title>: <what would settle it>
+
 ## Assumptions
 
 - <what you assumed without a decision, and why>
