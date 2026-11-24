@@ -23,6 +23,8 @@ repos:
     rev: 1f1ac45c93d1c2ce36b71330252c489a5f4f2724  # frozen: v9.27.0
     hooks:
       - id: commitlint
+        # Without a version, nodeenv installs "latest", a Node alpha that it cannot parse.
+        language_version: 24.22.0
         stages: [commit-msg]
         additional_dependencies: ["@commitlint/config-conventional@21.2.4"]
 
