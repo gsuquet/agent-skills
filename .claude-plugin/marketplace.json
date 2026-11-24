@@ -26,8 +26,8 @@
     {
       "name": "describe-change",
       "source": "./",
-      "description": "Write the title and body of a pull request or merge request, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.",
-      "version": "0.1.0",
+      "description": "Write the title and body of a pull request or merge request for a code, documentation, ADR or RFC change, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.",
+      "version": "0.2.0",
       "skills": [
         "./skills/describe-change"
       ]

@@ -9,8 +9,9 @@ already exists and the point is what changes in it. Every block below renders on
 | Terraform resources | Plan address tree |
 | Kubernetes manifests | `kubectl diff` excerpt or overlay tree |
 | Go control flow | Call tree |
-| Files moved, added, split | File tree |
+| Files or doc pages moved, added, split | File tree |
 | Interactions between services or components | Mermaid sequence or flowchart |
+| A choice among options (ADR, RFC) | Options table |
 | Logic inside one function | Pseudocode, or the whole new function when most of it is new |
 
 ## Plan address tree
@@ -90,6 +91,20 @@ sequenceDiagram
 ````
 
 Use `flowchart LR` for data flow or a decision path.
+
+## Options table
+
+One row per decision driver, most important first, four rows at most. One column per option, "Do
+nothing" included; name the chosen option in bold, or the proposed one while the decision is open.
+Each cell holds a fact of five words at most.
+
+```markdown
+| | **Managed queue** | Self-hosted broker | Do nothing |
+|---|---|---|---|
+| Lost messages | none, redelivered | none, replicated | on each restart |
+| Operations | none | upgrades, backups | none |
+| Cost per month | 40 USD | 110 USD | 0 USD |
+```
 
 ## Pseudocode
 
