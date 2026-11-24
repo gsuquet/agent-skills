@@ -1,0 +1,8 @@
+{
+  "name": "gs",
+  "description": "Agent skills, invoked as /gs:<skill>.",
+  "author": {
+    "name": "Gabriel Suquet",
+    "url": "https://github.com/gsuquet"
+  }
+}

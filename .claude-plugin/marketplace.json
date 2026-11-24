@@ -1,27 +1,15 @@
 {
-  "name": "gsuquet-skills",
+  "name": "gsuquet",
   "owner": {
     "name": "Gabriel Suquet",
     "url": "https://github.com/gsuquet"
   },
-  "description": "Agent skills: install all of them with the \"all\" plugin, or one plugin per skill.",
+  "description": "Agent skills: install all of them with the \"gs\" plugin, or one plugin per skill.",
   "plugins": [
     {
-      "name": "all",
-      "source": "./",
-      "description": "Every skill of this repository. Do not combine with the single-skill plugins.",
-      "skills": [
-        "./skills/describe-change",
-        "./skills/diagnose",
-        "./skills/handoff",
-        "./skills/interview",
-        "./skills/orchestrate",
-        "./skills/run-retro",
-        "./skills/write-docs",
-        "./skills/write-for-agents",
-        "./skills/write-skill",
-        "./skills/write-tickets"
-      ]
+      "name": "gs",
+      "source": "./plugins/gs",
+      "description": "Every skill of this repository, each as a plugin with its own version."
     },
     {
       "name": "describe-change",
