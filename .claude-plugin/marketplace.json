@@ -81,7 +81,7 @@
       "name": "write-docs",
       "source": "./",
       "description": "Write or update a technical doc for human readers from a fixed template - README, how-to, tutorial, reference, concept, runbook, or an RFC with the ADR generated from it once accepted. Use when the user asks to document something, write one of these docs, propose a design or record a technical decision. Not for text agents read or for PR/MR bodies.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "skills": [
         "./skills/write-docs"
       ]

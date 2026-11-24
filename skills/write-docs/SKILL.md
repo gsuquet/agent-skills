@@ -2,7 +2,7 @@
 name: write-docs
 description: Write or update a technical doc for human readers from a fixed template - README, how-to, tutorial, reference, concept, runbook, or an RFC with the ADR generated from it once accepted. Use when the user asks to document something, write one of these docs, propose a design or record a technical decision. Not for text agents read or for PR/MR bodies.
 metadata:
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Write docs
@@ -34,6 +34,10 @@ its readers look.
 
    An ADR is never written directly: a request for one is an RFC (see [RFC](#rfc)).
 3. **Place it.** Done when the path is chosen.
+   - The team has a docs repository, a template or an RFC/ADR process (check the instruction files
+     and the target repository): its place, template, numbering and states replace this skill's, and
+     the scripts of this skill run only on documents from its own templates. The rules below and
+     [RFC](#rfc) cover what the team leaves open.
    - The doc is about one repository: it goes in that repository. A README is `README.md` in the
      folder it describes. An RFC is the path `scripts/next-number.sh rfc <slug>` prints. Any other
      type is `docs/<folder>/<slug>.md`, with `<folder>` one of `how-to`, `tutorials`, `reference`,
@@ -45,9 +49,11 @@ its readers look.
    - When a doc of the same type and subject exists, the path is that doc: update it.
 
    For an RFC, the steps of [RFC](#rfc) replace steps 4 and 5.
-4. **Write.** Read the template and fill it exactly into the path. Run each command the doc shows
-   when it is read-only, and use its real output with secrets replaced by `<REDACTED>`; mark each
-   command you did not run `(untested)`. Done when no `<...>` placeholder is left.
+4. **Write.** Read the template and fill it exactly into the path. Add a diagram (Mermaid when the
+   place renders it) wherever three or more parts interact, unless the template says otherwise. Run
+   each command the doc shows when it is read-only, and use its real output with secrets replaced by
+   `<REDACTED>`; mark each command you did not run `(untested)`. Done when no `<...>` placeholder is
+   left.
 5. **Finish.** Link the doc from the README of its repository, or of `<hub>` when it has one; a
    README needs no link. Reply with the path, one sentence on what the doc covers, and the
    untested commands. Done when the reply is sent.
@@ -65,7 +71,7 @@ published API depends on what it changes. The review window is 2 business days o
 track and 5 on the full track; it ends early when every decider has approved.
 
 1. **Draft.** Read [assets/rfc.md](assets/rfc.md) and fill what you know into the path, with
-   `status: draft`; run commands as in step 4. Open a draft PR/MR with
+   `status: draft`; run commands and add diagrams as in step 4. Open a draft PR/MR with
    [describe-change](../describe-change/SKILL.md). Done when `scripts/check-rfc.sh <file>` exits 0.
 2. **Review.** Set `review:` to the PR/MR URL and fill every field. Done when
    `scripts/check-rfc.sh <file> --target review` exits 0, then `status: review` and `updated:`
