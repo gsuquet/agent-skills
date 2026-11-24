@@ -7,22 +7,26 @@ text.
 ````markdown
 ## Summary
 
-<one or two sentences: what a reader can now do or know, or what is decided; the path of the doc or record>
+<one or two sentences: what a reader can now do or know, or what is decided, and why; the path of the doc or record>
 
 <the visual from references/visuals.md>
 
 ## Decision
 
-**Status:** <status in the record, and the status after merge when it differs>
+**Status:** <status in the record; what must change before the merge while it is undecided>
 
 **Deciders:** <who accepts or rejects>, <"by <YYYY-MM-DD>", "no deadline" or "decided on <YYYY-MM-DD>">
 
 **Asked of the reviewer:** <the choice to approve, in one line>
 
+## Links
+
+- **<Ticket | Record | Doc | Related | Pipeline | Dashboard>:** [<title or number>](<full URL>)
+
 ## Evidence
 
-- **Checked:** <each check with its result: commands of the doc you ran, claims compared with the source, links, lint>
-- **Not checked:** <commands marked untested, figures without a source, assumptions>
+- **Checked:** <each check with its result: commands of the doc you ran, claims compared with the source, rendered page, links (also inbound ones to a moved or deleted page), index or navigation entry, lint>
+- **Not checked:** <commands marked untested, figures without a source, assumptions; remove the line when there is nothing>
 
 ## Merge danger
 
@@ -38,4 +42,5 @@ text.
   implementation log) removes them too.
 - The door is that of the decision, not of the file: take it from the record (`reversibility:` in an
   RFC) when it says so.
+- The record that this one supersedes is a `Record` link.
 - Lint proves the format only: list it last.
