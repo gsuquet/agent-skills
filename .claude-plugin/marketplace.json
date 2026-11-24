@@ -11,8 +11,36 @@
       "source": "./",
       "description": "Every skill of this repository. Do not combine with the single-skill plugins.",
       "skills": [
+        "./skills/describe-change",
+        "./skills/diagnose",
+        "./skills/handoff",
         "./skills/interview",
+        "./skills/write-for-agents",
         "./skills/write-skill"
+      ]
+    },
+    {
+      "name": "describe-change",
+      "source": "./",
+      "description": "Write the title and body of a pull request or merge request, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.",
+      "skills": [
+        "./skills/describe-change"
+      ]
+    },
+    {
+      "name": "diagnose",
+      "source": "./",
+      "description": "Diagnose a bug, regression, flaky test, Terraform drift or failing Kubernetes workload by first building a check that reproduces it. Use when the user says debug or diagnose, or reports something broken, failing or slow.",
+      "skills": [
+        "./skills/diagnose"
+      ]
+    },
+    {
+      "name": "handoff",
+      "source": "./",
+      "description": "Compact the current session into a handoff document that a new agent session, in Claude Code, Antigravity or another agent, continues from. Use when the user asks for a handoff, to hand over the work, or to continue in a new session.",
+      "skills": [
+        "./skills/handoff"
       ]
     },
     {
@@ -21,6 +49,14 @@
       "description": "Interview the user in rounds of numbered questions, each with a recommended answer, until every decision of a plan, design or idea is settled, then end with a decision summary and wait for confirmation. Use only when the user asks to be grilled or interviewed, or to stress-test or challenge a plan, design or decision. Do not start it on your own for a task that merely needs planning.",
       "skills": [
         "./skills/interview"
+      ]
+    },
+    {
+      "name": "write-for-agents",
+      "source": "./",
+      "description": "Write or review any text an agent reads, so that every run takes the same path through it. Use when writing or editing a skill, an AGENTS.md or CLAUDE.md, or a doc an agent reaches through a link.",
+      "skills": [
+        "./skills/write-for-agents"
       ]
     },
     {
