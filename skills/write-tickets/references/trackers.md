@@ -100,7 +100,7 @@ Tier limits, all (unverified):
   ([link mark](https://developer.atlassian.com/cloud/jira/platform/apis/document/marks/link/)),
   not an `inlineCard`, which Jira renders as a smart link card resolved from the URL
   ([inlineCard](https://developer.atlassian.com/cloud/jira/platform/apis/document/nodes/inlineCard/)).
-  Code spans and Markdown links are left as they are. Without `site`, the key stays plain text and
+  Code spans, fenced code blocks and Markdown links are left as they are. Without `site`, the key stays plain text and
   the script warns: whether Jira links a plain key in an ADF text node is (unverified), as the ADF
   reference does not say.
 

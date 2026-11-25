@@ -10,9 +10,9 @@ references of every tracker. No network call.
   jira-payload.py refs --body FILE --map MAP_TSV [--config FILE] [--placeholder] [--always]
       Print the ADF description with each "ticket NN" replaced by the key of draft NN in map.tsv,
       or nothing when the body names no ticket. The key links to <site>/browse/KEY when the config
-      sets "site"; without it the key stays plain text and a warning is printed. Code spans and
-      Markdown links are left as they are. --placeholder writes @NN for a draft not in map.tsv.
-      --always prints the description also when the body names no ticket.
+      sets "site"; without it the key stays plain text and a warning is printed. Code spans, fenced
+      code blocks and Markdown links are left as they are. --placeholder writes @NN for a draft not
+      in map.tsv. --always prints the description also when the body names no ticket.
 
   jira-payload.py refs --format markdown --body FILE --map MAP_TSV [--placeholder]
       GitHub and GitLab: print the Markdown body with each "ticket NN" replaced by #<id> of draft
