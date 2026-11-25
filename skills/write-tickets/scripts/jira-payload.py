@@ -165,9 +165,10 @@ def join_lines(text, lines, i, labels=False):
 
 
 def fence_at(line):
-    """The match of a fence that opens on the line, also after a list marker."""
-    item = list_item(line)
-    return FENCE.match(item.group(3).strip() if item else line)
+    """The match of a fence that opens on the line, also after list markers."""
+    while item := list_item(line):
+        line = item.group(3).strip()
+    return FENCE.match(line)
 
 
 def fence_end(lines, i, fence):
@@ -251,11 +252,11 @@ def item_lines(lines, i, indent, labels):
 
 
 def item_blocks(match, rest, ref):
-    """The blocks of one list item: the text of its own line is a paragraph or opens a fence."""
+    """The blocks of one list item: the text of its own line is a paragraph, unless a fence opens on it."""
     start = len(match.group(1))
     width = start + len(re.match(r"\S+\s", match.group(2)).group(0))
     own = match.group(3).strip()
-    fence = FENCE.match(own)
+    fence = fence_at(own)
     first = next((indent_of(x) for x in rest if x.strip() and indent_of(x) > start), 0)
     inner = []
     for line, code in zip(rest, in_fence([own if fence else ""] + rest)[1:]):
@@ -293,6 +294,8 @@ def parse_list(lines, i, ref=None, labels=False):
             n = next((n for n, b in enumerate(held) if b["type"] != "taskList"), len(held))
             items += held[:n]
         else:
+            if held[0]["type"] not in ("paragraph", "codeBlock"):
+                held.insert(0, para(""))  # a list item cannot start with a list
             n = next((n for n, b in enumerate(held) if b["type"] not in LIST_ITEM), len(held))
             items.append({"type": "listItem", "content": held[:n]})
         if held[n:]:

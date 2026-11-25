@@ -88,7 +88,10 @@ Tier limits, all (unverified):
   or a quote becomes a paragraph.
 - Not converted, the text is kept: indented code, underlined (`===`) headings, tables whose rows do
   not start with `|`, reference links and HTML are joined like a paragraph. A checkbox after a number
-  (`1. [ ] a`) or without text (`- [ ]`) stays text.
+  (`1. [ ] a`) or without text (`- [ ]`) stays text. So does a heading, quote, table row or second
+  list marker after a list marker (`- # h`, `- > q`, `- | a | b |`, `- - a`), unless a fence opens on
+  that line; the quote or table rows below it become a separate block. A one-column table without a
+  closing pipe (`| a`) is joined like a paragraph.
 - That Jira renders an ADF description sent through
   `--from-json` or `--description-file` is unverified: publish with `--max 1` first and check it.
 - `parentIssueId` is documented for sub-tasks. A project where Tasks cannot take an Epic parent
