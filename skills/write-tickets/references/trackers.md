@@ -77,10 +77,18 @@ Tier limits, all (unverified):
 | Issue key | `.key` of the JSON printed by `--json` | (unverified) |
 
 - The description is converted from Markdown to Atlassian Document Format: headings, lists, task
-  lists, tables, quotes, rules, fenced code blocks, inline code, bold, links. Hard-wrapped lines are
-  joined, except that a `Name: value` line above the first `## ` heading keeps its own paragraph. A
-  change of list kind starts a new list, and so does a block under a task item, which holds only
-  text. That Jira renders an ADF description sent through
+  lists, tables, quotes, rules, fenced code blocks, hard breaks, inline code, bold, links.
+  Hard-wrapped lines are joined. Above the first `## ` heading, a line that starts with a label
+  (`Name: value`, `Name (team): value` or `**Name:** value`, with no indentation and a name of at
+  most 31 characters) starts its own paragraph.
+- A change of list kind starts a new list. A block that its container cannot hold follows it, and
+  the next items or lines start a new list or quote: a task item holds only text and task lists, a
+  list item no table, quote or rule, a quote no table, task list or rule. A heading in a list item
+  or a quote becomes a paragraph.
+- Not converted, the text is kept: indented code, underlined (`===`) headings, tables whose rows do
+  not start with `|`, reference links and HTML are joined like a paragraph. A checkbox after a number
+  (`1. [ ] a`) or without text (`- [ ]`) stays text.
+- That Jira renders an ADF description sent through
   `--from-json` or `--description-file` is unverified: publish with `--max 1` first and check it.
 - `parentIssueId` is documented for sub-tasks. A project where Tasks cannot take an Epic parent
   refuses it; some sites set the epic through an Epic Link custom field instead (unverified).

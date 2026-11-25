@@ -36,15 +36,20 @@ import uuid
 from pathlib import Path
 
 FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([^\s`]*)[^`]*$")
-HEADING = re.compile(r"^(#{1,6}) (.*)$")
-RULE = re.compile(r"^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$")
-ITEM = re.compile(r"^(\s*)(- \[[ xX]\] |[-*+] |\d+\. )(.*)$")
+HEADING = re.compile(r"^ {0,3}(#{1,6}) (.*)$")
+RULE = re.compile(r"^ {0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$")
+ITEM = re.compile(r"^(\s*)([-*+]\s+\[[ xX]\]\s|[-*+]\s|\d{1,9}[.)]\s)(.*)$")
+ROW = re.compile(r"^\s*\|.*\|")
+QUOTE = re.compile(r"^\s*>\s?")
 # A "Blocked by: 01" line: above the first "## " heading, it starts its own paragraph.
-LABEL = re.compile(r"^[A-Z][\w -]{0,30}:\s")
+LABEL = re.compile(r"^[*_]{0,2}\w[\w '()/&-]{0,30}[*_]{0,2}:[*_]{0,2}\s")
 INLINE = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))")
 # "ticket 05", "Tickets 05, 09 and 12": the word goes, each number becomes a key.
 REFS = re.compile(r"\b(?i:tickets?) ([0-9]{2}(?:(?:,? and |,? or |, )[0-9]{2})*)\b")
 NUM = re.compile(r"[0-9]{2}")
+# What these nodes hold in ADF. Any other block goes after them.
+LIST_ITEM = {"paragraph", "bulletList", "orderedList", "taskList", "codeBlock"}
+BLOCKQUOTE = {"paragraph", "bulletList", "orderedList", "codeBlock"}
 SESSION_REFS = "Q[0-9]+"
 # Ordinary text that looks like a question number: "Q4 2026", "2026-Q4", "Q1 and Q2 FY26".
 _YEAR = r"(?:20\d\d|FY ?(?:20)?\d\d|['\u2019]\d\d)\b"
@@ -89,67 +94,119 @@ def ref_nodes(text, marks, ref):
     return nodes
 
 
+def hard_breaks(nodes):
+    """The text nodes, each hard break of join_lines replaced by a hardBreak node."""
+    out = []
+    for node in nodes:
+        for n, text in enumerate(re.split(r"[\n\r]", node["text"])):
+            if n:
+                out.append({"type": "hardBreak"})
+            if text:
+                out.append({**node, "text": text})
+    return out
+
+
 def inline(text, ref=None):
-    """ADF text nodes of one line. ref, when set, rewrites "ticket NN" outside code and links."""
+    """ADF nodes of one paragraph. ref, when set, rewrites "ticket NN" outside code and links."""
     nodes = []
     for part in INLINE.split(text):
         if not part:
             continue
-        if part.startswith("`"):
-            nodes.append(text_node(part[1:-1], [{"type": "code"}]))
+        if not INLINE.fullmatch(part):  # also text that only starts like one: "[x] done", "**"
+            nodes.extend(ref_nodes(part, [], ref))
+        elif part.startswith("`"):
+            code = part[1:-1].replace("\n", " ").replace("\r", "\\ ")  # no hard break in a code span
+            nodes.append(text_node(code, [{"type": "code"}]))
         elif part.startswith("**"):
             nodes.extend(ref_nodes(part[2:-2], [{"type": "strong"}], ref))
-        elif part.startswith("["):
+        else:
             m = re.match(r"\[([^\]]+)\]\(([^)]+)\)", part)
             nodes.append(text_node(m.group(1), [{"type": "link", "attrs": {"href": m.group(2)}}]))
-        else:
-            nodes.extend(ref_nodes(part, [], ref))
-    return nodes
+    return hard_breaks(nodes)
 
 
 def para(text, ref=None):
     return {"type": "paragraph", "content": inline(text, ref)}
 
 
+def list_item(line):
+    return None if RULE.match(line) else ITEM.match(line)
+
+
 def is_block_start(line):
     """True for a line that ends a paragraph: blank, or the first line of another block."""
-    return not line.strip() or line.startswith(("|", ">")) or any(
-        r.match(line) for r in (HEADING, FENCE, RULE, ITEM))
+    return not line.strip() or any(r.match(line) for r in (HEADING, FENCE, RULE, ITEM, ROW, QUOTE))
 
 
-def join_lines(lines, i):
-    """Join the hard-wrapped lines after line i. Returns the text to add and the next index."""
-    text = ""
-    while i < len(lines) and not is_block_start(lines[i]):
-        text += " " + lines[i].strip()
+def join_lines(text, lines, i, labels=False):
+    """Join text and the hard-wrapped lines from i on. Returns the text and the next index.
+
+    A hard break is kept as \\n (two spaces) or \\r (backslash): no line holds these characters.
+    """
+    text = text.lstrip()
+    while i < len(lines) and not is_block_start(lines[i]) and not (labels and LABEL.match(lines[i])):
+        if text.endswith("  "):
+            text = text.rstrip() + "\n"
+        elif re.search(r"(?<!\\)\\$", text):
+            text = text[:-1] + "\r"
+        else:
+            text = text.rstrip() + " "
+        text += lines[i].lstrip()
         i += 1
-    return text, i
+    return text.strip(), i
+
+
+def fence_at(line):
+    """The match of a fence that opens on the line, also after a list marker."""
+    item = list_item(line)
+    return FENCE.match(item.group(3).strip() if item else line)
+
+
+def fence_end(lines, i, fence):
+    """The index of the line that closes the fence opened at line i. An unclosed fence runs to the end."""
+    mark = fence.group(2)
+    for j in range(i + 1, len(lines)):
+        end = lines[j].strip()
+        if len(end) >= len(mark) and set(end) == {mark[0]}:
+            return j
+    return len(lines)
+
+
+def in_fence(lines):
+    """For each line, whether it belongs to a fenced code block."""
+    flags, i = [False] * len(lines), 0
+    while i < len(lines):
+        fence = fence_at(lines[i])
+        end = fence_end(lines, i, fence) if fence else i
+        if fence:
+            flags[i:end + 1] = [True] * len(flags[i:end + 1])
+        i = end + 1
+    return flags
+
+
+def indent_of(line):
+    return len(line) - len(line.lstrip())
+
+
+def dedent(line, width):
+    return line[min(width, indent_of(line)):]
 
 
 def code_block(lines, i):
-    """The fenced block that starts at line i. An unclosed fence runs to the end."""
-    m = FENCE.match(lines[i])
-    indent, fence, lang = len(m.group(1)), m.group(2), m.group(3)
-    code = []
-    i += 1
-    while i < len(lines):
-        end = lines[i].strip()
-        if len(end) >= len(fence) and set(end) == {fence[0]}:
-            i += 1
-            break
-        line = lines[i]
-        code.append(line[min(indent, len(line) - len(line.lstrip())):])
-        i += 1
+    """The fenced block that starts at line i, and the next index."""
+    fence = FENCE.match(lines[i])
+    end = fence_end(lines, i, fence)
+    code = [dedent(line, len(fence.group(1))) for line in lines[i + 1:end]]
     node = {"type": "codeBlock"}
-    if lang:
-        node["attrs"] = {"language": lang}
-    if code and any(code):
+    if fence.group(3):
+        node["attrs"] = {"language": fence.group(3)}
+    if any(code):
         node["content"] = [{"type": "text", "text": "\n".join(code)}]
-    return node, i
+    return node, end + 1
 
 
 def item_kind(marker):
-    if marker.startswith("- ["):
+    if "[" in marker:
         return "task"
     return "ordered" if marker[0].isdigit() else "bullet"
 
@@ -163,65 +220,88 @@ def list_node(kind, items, start):
     return node
 
 
-def parse_list(lines, i, indent, ref=None):
-    """One bullet, ordered or task list, nested by indentation. A change of kind ends the list.
+def item_lines(lines, i, indent, labels):
+    """The lines that belong to the list item at line i, without its own line, and the next index."""
+    end = j = i + 1
+    fence, wraps = fence_at(lines[i]), True
+    if fence:
+        end = j = fence_end(lines, i, fence) + 1
+        wraps = False
+    while j < len(lines):
+        line = lines[j]
+        if not line.strip():
+            wraps, j = False, j + 1
+            continue
+        # A line that is not indented belongs to the item only as the next line of its paragraph.
+        if indent_of(line) <= indent and (not wraps or is_block_start(line) or labels and LABEL.match(line)):
+            break
+        fence = fence_at(line)
+        j = fence_end(lines, j, fence) + 1 if fence else j + 1
+        wraps = not fence and (not is_block_start(line.strip()) or bool(list_item(line)))
+        end = j
+    return lines[i + 1:end], end
 
-    A task item holds only text in ADF, so any other block under it ends the task list.
+
+def item_blocks(match, rest, ref):
+    """The blocks of one list item: the text of its own line is a paragraph or opens a fence."""
+    start = len(match.group(1))
+    width = start + len(re.match(r"\S+\s", match.group(2)).group(0))
+    if FENCE.match(match.group(3).strip()):
+        return blocks([match.group(3).strip()] + [dedent(x, width) for x in rest], ref)
+    first = next((indent_of(x) for x in rest if x.strip() and indent_of(x) > start), 0)
+    rest = [dedent(x, min(width, first)) for x in rest]
+    text, n = join_lines(match.group(3), rest, 0)
+    return [para(text, ref)] + blocks(rest[n:], ref)
+
+
+def as_paragraph(node):
+    return {"type": "paragraph", "content": node["content"]} if node["type"] == "heading" else node
+
+
+def parse_list(lines, i, ref=None, labels=False):
+    """The bullet, ordered or task list at line i, as a list of blocks, and the next index.
+
+    A change of kind ends the list. So does a block that an item cannot hold: it follows the list
+    with the rest of its item, and the next items start a new list.
     """
-    items, kind, start = [], None, 1
-    while i < len(lines):
-        if not lines[i].strip():
-            # Blank lines between two items of the same list, or before an indented block of the item.
-            j = i
-            while j < len(lines) and not lines[j].strip():
-                j += 1
-            m = ITEM.match(lines[j]) if j < len(lines) else None
-            same = m and len(m.group(1)) == indent and item_kind(m.group(2)) == kind
-            deeper = j < len(lines) and len(lines[j]) - len(lines[j].lstrip()) > indent
-            if not same and not (deeper and (m or kind != "task")):
-                break
-            i = j
-            if deeper and not m and not FENCE.match(lines[i]):
-                text, after = join_lines(lines, i)
-                if not text:
-                    break
-                items[-1]["content"].append(para(text.strip(), ref))
-                i = after
-            continue
-        fence = FENCE.match(lines[i])
-        if fence:
-            if kind == "task" or len(fence.group(1)) <= indent:
-                break
-            node, i = code_block(lines, i)
-            items[-1]["content"].append(node)
-            continue
-        m = ITEM.match(lines[i])
-        if not m or len(m.group(1)) < indent or RULE.match(lines[i]):
-            break
-        if len(m.group(1)) > indent:
-            if not items:
-                die(f"list item indented without a parent: {lines[i]!r}")
-            if kind == "task" and item_kind(m.group(2)) != "task":
-                break
-            nested, i = parse_list(lines, i, len(m.group(1)), ref)
-            # ADF nests a task list next to the task item, and any other list inside the list item.
-            (items if kind == "task" else items[-1]["content"]).append(nested)
-            continue
-        marker = m.group(2)
-        k = item_kind(marker)
-        if kind and k != kind:
-            break
-        if not kind and k == "ordered":
-            start = int(marker[:-2])
-        kind = k
-        more, i = join_lines(lines, i + 1)
-        text = m.group(3).rstrip() + more
-        if k == "task":
-            attrs = {"localId": uuid.uuid4().hex[:12], "state": "TODO" if marker == "- [ ] " else "DONE"}
-            items.append({"type": "taskItem", "attrs": attrs, "content": inline(text, ref)})
+    match = list_item(lines[i])
+    indent, kind = len(match.group(1)), item_kind(match.group(2))
+    number = int(match.group(2).strip()[:-1]) if kind == "ordered" else 1
+    out, items = [], []
+    while match and len(match.group(1)) == indent and item_kind(match.group(2)) == kind:
+        rest, i = item_lines(lines, i, indent, labels)
+        held = [as_paragraph(b) for b in item_blocks(match, rest, ref)]
+        if kind == "task":  # a task item holds only text, and a nested task list is next to it
+            text = held.pop(0)["content"] if held[0]["type"] == "paragraph" else []
+            state = "TODO" if "[ ]" in match.group(2) else "DONE"
+            attrs = {"localId": uuid.uuid4().hex[:12], "state": state}
+            items.append({"type": "taskItem", "attrs": attrs, "content": text})
+            n = next((n for n, b in enumerate(held) if b["type"] != "taskList"), len(held))
+            items += held[:n]
         else:
-            items.append({"type": "listItem", "content": [para(text, ref)]})
-    return list_node(kind, items, start), i
+            n = next((n for n, b in enumerate(held) if b["type"] not in LIST_ITEM), len(held))
+            items.append({"type": "listItem", "content": held[:n]})
+        if held[n:]:
+            out += [list_node(kind, items, number), *held[n:]]
+            number, items = number + len(items), []
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        match = list_item(lines[i]) if i < len(lines) else None
+    return out + ([list_node(kind, items, number)] if items else []), i
+
+
+def quote(inner):
+    """The blocks of a quote. A block that a quote cannot hold splits it."""
+    out = []
+    for b in map(as_paragraph, inner):
+        nested = b["type"] == "blockquote"
+        if not nested and b["type"] not in BLOCKQUOTE:
+            out.append(b)
+            continue
+        if not out or out[-1]["type"] != "blockquote":
+            out.append({"type": "blockquote", "content": []})
+        out[-1]["content"] += b["content"] if nested else [b]
+    return out
 
 
 def table(rows, ref=None):
@@ -235,9 +315,8 @@ def table(rows, ref=None):
     return {"type": "table", "attrs": {"isNumberColumnEnabled": False, "layout": "default"}, "content": out}
 
 
-def to_adf(lines, ref=None):
+def blocks(lines, ref=None, labels=False):
     content, i = [], 0
-    first_section = next((n for n, x in enumerate(lines) if x.startswith("## ")), len(lines))
     while i < len(lines):
         line = lines[i]
         heading = HEADING.match(line)
@@ -250,33 +329,34 @@ def to_adf(lines, ref=None):
             level = {"level": len(heading.group(1))}
             content.append({"type": "heading", "attrs": level, "content": inline(heading.group(2), ref)})
             i += 1
-        elif line.startswith("|"):
+        elif ROW.match(line):
             j = i
-            while j < len(lines) and lines[j].startswith("|"):
+            while j < len(lines) and ROW.match(lines[j]):
                 j += 1
             content.append(table(lines[i:j], ref))
             i = j
         elif RULE.match(line):
             content.append({"type": "rule"})
             i += 1
-        elif line.startswith(">"):
-            quoted = []
-            while i < len(lines) and lines[i].startswith(">"):
-                quoted.append(lines[i].lstrip(">").strip())
-                i += 1
-            parts = [p.strip() for p in re.split(r"\n{2,}", "\n".join(quoted)) if p.strip()]
-            if parts:
-                content.append({"type": "blockquote", "content": [para(p.replace("\n", " "), ref) for p in parts]})
+        elif QUOTE.match(line):
+            j = i
+            while j < len(lines) and QUOTE.match(lines[j]):
+                j += 1
+            content += quote(blocks([QUOTE.sub("", x) for x in lines[i:j]], ref))
+            i = j
         elif ITEM.match(line):
-            node, i = parse_list(lines, i, len(ITEM.match(line).group(1)), ref)
-            content.append(node)
+            nodes, i = parse_list(lines, i, ref, labels)
+            content += nodes
         else:
-            text, i = line.strip(), i + 1
-            while i < len(lines) and not is_block_start(lines[i]) and not (
-                    i < first_section and LABEL.match(lines[i])):
-                text += " " + lines[i].strip()
-                i += 1
+            text, i = join_lines(line, lines, i + 1, labels)
             content.append(para(text, ref))
+    return content
+
+
+def to_adf(lines, ref=None):
+    first_section = next((n for n, (x, code) in enumerate(zip(lines, in_fence(lines)))
+                          if x.startswith("## ") and not code), len(lines))
+    content = blocks(lines[:first_section], ref, labels=True) + blocks(lines[first_section:], ref)
     return {"type": "doc", "version": 1, "content": content}
 
 
