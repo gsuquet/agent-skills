@@ -61,8 +61,8 @@ Types: rfc, adr, concept, how-to, runbook, readme, study-index, reference, tutor
   allow-code         an allow-code comment holds an invalid regex
   decision-table     rfc only: the Summary section (a heading of level 1 or 2 that holds "summary") needs a table with the columns Decision, Why, Cost
                      and Reversible, with at least 1 row and no empty cell
-  decision-reversible  rfc only: each Reversible cell starts with yes or no, then says how or why, not
-                     starting with yes, no, unknown or depends. While
+  decision-reversible  rfc only: each Reversible cell starts with yes or no, then says how or why, with a reason
+                     that is more than yes or no and does not start with unknown or depends. While
                      the status is draft or withdrawn, "open" with a link to #open-questions passes. A cell that
                      says no contradicts "reversibility: two-way"
   decision-cap       rfc only: rows of the decision tables, and "### " headings of "## Decisions",
@@ -517,7 +517,7 @@ scan() {
         if (answer ~ /^(yes|no)([^a-z0-9\200-\377]|$)/) {
             reason = answer
             sub(/^(yes|no)[^a-z0-9\200-\377]*/, "", reason)
-            if (reason != "" && reason !~ /^(not stated|not assessed|not known|unknown|tbd|tbc|todo|n\/a|to be [a-z]+)[^a-z0-9]*$/ && reason !~ /^(yes|no|unknown|depends)([^a-z0-9\200-\377]|$)/) {
+            if (reason != "" && reason !~ /^(not stated|not assessed|not known|unknown|tbd|tbc|todo|n\/a|to be [a-z]+)[^a-z0-9]*$/ && reason !~ /^((yes|no)[^a-z0-9\200-\377]*)?(unknown|depends)([^a-z0-9\200-\377]|$)/ && reason !~ /^(yes|no)[^a-z0-9\200-\377]*$/) {
                 if (answer ~ /^no/ && reversibility == "two-way")
                     finding(NR, "decision-reversible", "Reversible cell says no, but reversibility: is two-way")
                 return
