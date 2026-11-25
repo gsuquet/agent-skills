@@ -7,12 +7,13 @@ usage() {
 Usage: rfc-to-adr.sh <rfc-file>
 
 Writes the ADR of an accepted RFC from assets/adr.md: front matter, the RFC's Decision section
-copied verbatim, and a link back to the RFC. Then sets the RFC's adr: field to the ADR path.
+copied verbatim, a link back to the RFC, and the names its allow-code comments allow. Then sets the RFC's adr: field to the ADR path.
 
 The ADR path is the RFC's adr: value when set, else the one next-number.sh prints. Running it again
 rewrites the same ADR and changes nothing when the RFC did not change.
 
-Refuses unless the RFC status is accepted and check-rfc.sh passes (adr: aside).
+Refuses unless the RFC status is accepted and check-rfc.sh passes (adr: aside), and when the ADR path
+holds another file.
 
 Options:
   -h, --help  show this help
@@ -61,57 +62,20 @@ status="$(fm_get "${file}" status)"
 }
 
 root="$(rfc_root "${file}")"
-name="$(basename "${file}")"
-slug="${name#[0-9][0-9][0-9][0-9]-}"
-slug="${slug%.md}"
-adr="$(fm_get "${file}" adr)"
-if is_unset "${adr}"; then
-    adr="$("${here}/next-number.sh" adr "${slug}" --root "${root}")"
-fi
-[[ "$(basename "${adr}")" =~ ^([0-9]{4})-[a-z0-9-]+\.md$ ]] || {
+adr="$(adr_of "${file}" "${here}")"
+[[ "$(basename "${adr}")" =~ ^[0-9]{4}-[a-z0-9-]+\.md$ ]] || {
     echo "error: adr: '${adr}' is not a NNNN-slug.md path" >&2
     exit 1
 }
-adr_number="${BASH_REMATCH[1]}"
 adr_path="${root}/${adr}"
-
-decision="$(section "${file}" Decision | trim)"
-decision_date="$(sed -n 's/^- Status: accepted on \([0-9-]*\) .*/\1/p' <<< "${decision}" | head -n 1)"
-# From the ADR folder back to the root: one ".." per path segment.
-up="$(dirname "${adr}" | sed 's#[^/][^/]*#..#g')"
+if [[ -e "${adr_path}" && "$(fm_get "${adr_path}" rfc)" != "docs/rfc/$(basename "${file}")" ]]; then
+    echo "error: ${adr} is not the ADR of ${file}: set adr: to null or to the right path" >&2
+    exit 1
+fi
 
 tmp="$(mktemp "${TMPDIR:-/tmp}/rfc-to-adr.XXXXXX")"
 trap 'rm -f "${tmp}"' EXIT
-ADR_NUMBER="${adr_number}" \
-    RFC_TITLE="$(fm_get "${file}" title)" \
-    DECISION_DATE="${decision_date}" \
-    RFC_PATH="docs/rfc/${name}" \
-    REVIEW_URL="$(fm_get "${file}" review)" \
-    RFC_NUMBER="$(fm_get "${file}" rfc)" \
-    RFC_LINK="${up}/docs/rfc/${name}" \
-    DECISION="${decision}" \
-    awk '
-        # Literal replacement: gsub would treat "&" in a URL as the match.
-        function put(s, token, value,    out, i) {
-            out = ""
-            while ((i = index(s, token)) > 0) {
-                out = out substr(s, 1, i - 1) value
-                s = substr(s, i + length(token))
-            }
-            return out s
-        }
-        $0 == "<rfc-decision-section>" { print ENVIRON["DECISION"]; next }
-        {
-            line = put($0, "<adr-number>", ENVIRON["ADR_NUMBER"])
-            line = put(line, "<rfc-title>", ENVIRON["RFC_TITLE"])
-            line = put(line, "<decision-date>", ENVIRON["DECISION_DATE"])
-            line = put(line, "<rfc-path>", ENVIRON["RFC_PATH"])
-            line = put(line, "<review-url>", ENVIRON["REVIEW_URL"])
-            line = put(line, "<rfc-number>", ENVIRON["RFC_NUMBER"])
-            line = put(line, "<rfc-link>", ENVIRON["RFC_LINK"])
-            print line
-        }
-    ' "${template}" > "${tmp}"
+render_adr "${file}" "${adr}" "${template}" "${here}" > "${tmp}"
 
 if [[ -f "${adr_path}" ]] && cmp -s "${tmp}" "${adr_path}"; then
     result="unchanged"

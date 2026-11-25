@@ -14,7 +14,11 @@ in SKILL.md. Prints one line per failure on stderr, or one "ok" line on stdout.
               section filled; optional sections filled or "N/A: <reason>"; Operational impact
               N/A rules; options and length limits of the track; Decision is "Pending.".
   accepted    review, plus: Open questions is "None."; Decision filled and standing alone; the
-              ADR in adr: matches the Decision section (only once status is accepted).
+              Decision has a Context line, 3 lines max,
+              and one Decision line per row of the Summary decision table; the ADR that
+              rfc-to-adr.sh would write passes check-readability.sh --type adr. Once the ADR
+              exists, an RFC without Context, with another number of Decision lines or with a
+              longer ADR stays valid, and the ADR in adr: matches the Decision section.
   rejected    review, plus: Decision filled with the rejection; adr: null.
   withdrawn   draft, plus: Decision starts with "Withdrawn on YYYY-MM-DD: <reason>"; adr: null.
   superseded  accepted, plus: superseded-by: names an existing RFC; the ADR status is
@@ -263,6 +267,39 @@ done
 
 # Open questions and Decision, by target status.
 stand_alone='see (above|below)|as (described|mentioned|stated) (above|below)|the (section|options?) above'
+# No ADR of this RFC yet: the rules that an older accepted RFC need not follow apply.
+undecided=false
+if is_unset "${adr}" || [[ -z "${root}" || ! -f "${root}/${adr}" ]] || [[ "$(fm_get "${root}/${adr}" rfc)" != "docs/rfc/${name}" ]]; then undecided=true; fi
+
+# check_decision_count: one Decision line per row of the Summary decision table.
+check_decision_count() {
+    local rows lines
+    rows="$("${here}/check-readability.sh" --type rfc --count-decisions "${file}" 2> /dev/null)" || rows=""
+    [[ "${rows}" =~ ^[0-9]+$ ]] || {
+        fail "Summary: cannot count the rows of the decision table, check-readability.sh printed '${rows}'"
+        return
+    }
+    lines="$(grep -c '^- Decision:[[:space:]]*[^[:space:]]' <<< "${decision}" || true)"
+    [[ "${rows}" -gt 0 ]] || {
+        fail "Summary: needs a decision table (check-readability.sh --type rfc)"
+        return
+    }
+    [[ "${rows}" -eq "${lines}" ]] ||
+        fail "Decision: needs one '- Decision:' line per row of the Summary decision table: ${rows} rows, ${lines} lines"
+}
+
+# check_adr_limits: the ADR that rfc-to-adr.sh would write passes the readability limits.
+check_adr_limits() {
+    local tmp path finding findings=""
+    path="$(adr_of "${file}" "${here}")"
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/check-rfc.XXXXXX")"
+    render_adr "${file}" "${path}" "${here}/../assets/adr.md" "${here}" > "${tmp}/adr.md"
+    findings="$("${here}/check-readability.sh" --type adr "${tmp}/adr.md" 2>&1 > /dev/null)" || true
+    rm -rf "${tmp}"
+    while IFS= read -r finding; do
+        [[ -z "${finding}" ]] || fail "Decision: the ADR fails: ${finding#"${tmp}/adr.md:"}"
+    done <<< "${findings}"
+}
 decision_line() {
     sed -n "s/^- $1:[[:space:]]*//p" <<< "${decision}" | head -n 1
 }
@@ -275,7 +312,20 @@ case "${target}" in
             fail "Open questions: must be 'None.': resolve each question or move it to Future work"
         [[ "$(decision_line Status)" =~ ^accepted\ on\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ by\ [^[:space:]] ]] ||
             fail "Decision: needs '- Status: accepted on YYYY-MM-DD by <deciders>'"
+        if grep -q '^- Context:' <<< "${decision}"; then
+            context="$(awk '/^- / { in_context = /^- Context:/ } in_context && NF { print }' <<< "${decision}")"
+            [[ "${context#- Context:}" =~ [^[:space:]] ]] || fail "Decision: '- Context:' is empty"
+            # The label alone on its line is not a line of Context.
+            context="$(sed '1{/^- Context:[[:space:]]*$/d;}' <<< "${context}")"
+            [[ "$(nonblank <<< "${context}")" -le 3 ]] || fail "Decision: Context: 3 lines max"
+        elif [[ "${undecided}" == true ]]; then
+            fail "Decision: needs a '- Context:' line"
+        fi
         [[ -n "$(decision_line Decision)" ]] || fail "Decision: needs a filled '- Decision:' line"
+        if [[ "${undecided}" == true ]]; then
+            check_decision_count
+            [[ -z "${root}" || -z "${number}" ]] || check_adr_limits
+        fi
         grep -q '^- Consequences:' <<< "${decision}" || fail "Decision: needs a '- Consequences:' line"
         grep -q '^  - Good: [^[:space:]]' <<< "${decision}" || fail "Decision: needs a '  - Good:' consequence"
         grep -q '^  - Bad: [^[:space:]]' <<< "${decision}" || fail "Decision: needs a '  - Bad:' consequence"

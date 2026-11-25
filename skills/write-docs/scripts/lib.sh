@@ -98,3 +98,58 @@ rfc_root() {
     [[ "$(basename "${dir}")" == rfc && "$(basename "$(dirname "${dir}")")" == docs ]] || return 1
     dirname "$(dirname "${dir}")"
 }
+
+# adr_of <rfc-file> <scripts dir>: print the ADR path of an RFC: its adr: value, else the next one.
+adr_of() {
+    local adr name
+    adr="$(fm_get "$1" adr)"
+    if is_unset "${adr}"; then
+        name="$(basename "$1" .md)"
+        adr="$("$2/next-number.sh" adr "${name#[0-9][0-9][0-9][0-9]-}" --root "$(rfc_root "$1")")"
+    fi
+    printf '%s\n' "${adr}"
+}
+
+# render_adr <rfc-file> <adr path> <template> <scripts dir>: print the ADR of an RFC. The allow-code
+# names go after the Source line, outside the copied Decision.
+render_adr() {
+    local name adr_number decision decision_date up allowed
+    name="$(basename "$1")"
+    adr_number="$(basename "$2" | cut -c1-4)"
+    decision="$(section "$1" Decision | trim)"
+    decision_date="$(sed -n 's/^- Status: accepted on \([0-9-]*\) .*/\1/p' <<< "${decision}" | head -n 1)"
+    # From the ADR folder back to the root: one ".." per path segment.
+    up="$(dirname "$2" | sed 's#[^/][^/]*#..#g')"
+    ADR_NUMBER="${adr_number}" \
+        RFC_TITLE="$(fm_get "$1" title)" \
+        DECISION_DATE="${decision_date}" \
+        RFC_PATH="docs/rfc/${name}" \
+        REVIEW_URL="$(fm_get "$1" review)" \
+        RFC_NUMBER="$(fm_get "$1" rfc)" \
+        RFC_LINK="${up}/docs/rfc/${name}" \
+        DECISION="${decision}" \
+        awk '
+            # Literal replacement: gsub would treat "&" in a URL as the match.
+            function put(s, token, value,    out, i) {
+                out = ""
+                while ((i = index(s, token)) > 0) {
+                    out = out substr(s, 1, i - 1) value
+                    s = substr(s, i + length(token))
+                }
+                return out s
+            }
+            $0 == "<rfc-decision-section>" { print ENVIRON["DECISION"]; next }
+            {
+                line = put($0, "<adr-number>", ENVIRON["ADR_NUMBER"])
+                line = put(line, "<rfc-title>", ENVIRON["RFC_TITLE"])
+                line = put(line, "<decision-date>", ENVIRON["DECISION_DATE"])
+                line = put(line, "<rfc-path>", ENVIRON["RFC_PATH"])
+                line = put(line, "<review-url>", ENVIRON["REVIEW_URL"])
+                line = put(line, "<rfc-number>", ENVIRON["RFC_NUMBER"])
+                line = put(line, "<rfc-link>", ENVIRON["RFC_LINK"])
+                print line
+            }
+        ' "$3"
+    allowed="$("$4/check-readability.sh" --type rfc --list-allowed "$1" | paste -s -d ' ' -)"
+    [[ -z "${allowed}" ]] || printf '\n<!-- readability: allow-code %s -->\n' "${allowed}"
+}

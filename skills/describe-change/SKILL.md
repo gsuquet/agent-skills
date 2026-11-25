@@ -2,7 +2,7 @@
 name: describe-change
 description: Write the title and body of a pull request or merge request for a code, documentation, ADR or RFC change, with a visual summary, before/after evidence and the merge danger. Use when the user asks to open, describe or update a PR or MR.
 metadata:
-  version: 0.3.0
+  version: 0.3.1
 ---
 
 # Describe a change
