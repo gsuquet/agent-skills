@@ -61,57 +61,16 @@ status="$(fm_get "${file}" status)"
 }
 
 root="$(rfc_root "${file}")"
-name="$(basename "${file}")"
-slug="${name#[0-9][0-9][0-9][0-9]-}"
-slug="${slug%.md}"
-adr="$(fm_get "${file}" adr)"
-if is_unset "${adr}"; then
-    adr="$("${here}/next-number.sh" adr "${slug}" --root "${root}")"
-fi
-[[ "$(basename "${adr}")" =~ ^([0-9]{4})-[a-z0-9-]+\.md$ ]] || {
+adr="$(adr_of "${file}" "${here}")"
+[[ "$(basename "${adr}")" =~ ^[0-9]{4}-[a-z0-9-]+\.md$ ]] || {
     echo "error: adr: '${adr}' is not a NNNN-slug.md path" >&2
     exit 1
 }
-adr_number="${BASH_REMATCH[1]}"
 adr_path="${root}/${adr}"
-
-decision="$(section "${file}" Decision | trim)"
-decision_date="$(sed -n 's/^- Status: accepted on \([0-9-]*\) .*/\1/p' <<< "${decision}" | head -n 1)"
-# From the ADR folder back to the root: one ".." per path segment.
-up="$(dirname "${adr}" | sed 's#[^/][^/]*#..#g')"
 
 tmp="$(mktemp "${TMPDIR:-/tmp}/rfc-to-adr.XXXXXX")"
 trap 'rm -f "${tmp}"' EXIT
-ADR_NUMBER="${adr_number}" \
-    RFC_TITLE="$(fm_get "${file}" title)" \
-    DECISION_DATE="${decision_date}" \
-    RFC_PATH="docs/rfc/${name}" \
-    REVIEW_URL="$(fm_get "${file}" review)" \
-    RFC_NUMBER="$(fm_get "${file}" rfc)" \
-    RFC_LINK="${up}/docs/rfc/${name}" \
-    DECISION="${decision}" \
-    awk '
-        # Literal replacement: gsub would treat "&" in a URL as the match.
-        function put(s, token, value,    out, i) {
-            out = ""
-            while ((i = index(s, token)) > 0) {
-                out = out substr(s, 1, i - 1) value
-                s = substr(s, i + length(token))
-            }
-            return out s
-        }
-        $0 == "<rfc-decision-section>" { print ENVIRON["DECISION"]; next }
-        {
-            line = put($0, "<adr-number>", ENVIRON["ADR_NUMBER"])
-            line = put(line, "<rfc-title>", ENVIRON["RFC_TITLE"])
-            line = put(line, "<decision-date>", ENVIRON["DECISION_DATE"])
-            line = put(line, "<rfc-path>", ENVIRON["RFC_PATH"])
-            line = put(line, "<review-url>", ENVIRON["REVIEW_URL"])
-            line = put(line, "<rfc-number>", ENVIRON["RFC_NUMBER"])
-            line = put(line, "<rfc-link>", ENVIRON["RFC_LINK"])
-            print line
-        }
-    ' "${template}" > "${tmp}"
+render_adr "${file}" "${adr}" "${template}" > "${tmp}"
 
 if [[ -f "${adr_path}" ]] && cmp -s "${tmp}" "${adr_path}"; then
     result="unchanged"

@@ -30,9 +30,9 @@ superseded-by: null
 
 | Decision | Why | Cost | Reversible |
 |---|---|---|---|
-| <one decision, 1 to 5 rows> | <reason, one line> | <what it costs or gives up> | <yes or no, and how or why> |
+| <one decision, one row per decision> | <reason, one line> | <what it costs or gives up> | <yes or no, and how or why> |
 
-<before and after: two flowcharts with the same layout, each with a caption and a legend; delete this line when nothing is replaced>
+<before and after, when something is replaced or removed and the 25-word rule of references/visuals.md does not waive them: two flowcharts, each with a caption and a legend; else delete this line>
 
 ## Context
 
@@ -112,7 +112,8 @@ N/A: not accepted yet.
 ## Rules by section
 
 - **Summary:** the decision table holds every decision the deciders accept, in short form; the
-  Decision section records them in full. Above 5 rows, write peer RFCs.
+  Decision section records them in full. Only a draft may say open under Reversible, as a link to
+  `#open-questions`.
 - **Options considered:** each option is a `### ` heading; `### Do nothing` is always one of
   them. Lightweight track: 1 option plus Do nothing at least. Full track: 2 options plus Do nothing
   at least.
@@ -123,7 +124,7 @@ N/A: not accepted yet.
 - **Decision:** `Pending.` until the deciders decide. It is copied verbatim into the ADR, so it
   stands alone: no "see above". Replace `Pending.` with one of these blocks.
 
-  Accepted (every line required):
+  Accepted (every line required; one Decision line per row of the Summary table, in its order):
 
   ```markdown
   - Status: accepted on <YYYY-MM-DD> by <deciders>

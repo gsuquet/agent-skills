@@ -19,13 +19,13 @@ fewer does not, then delete the text it replaces.
 |---|---|
 | Boundaries and parts | Mermaid flowchart, one C4 level per chart (context, container or component), each boundary a subgraph |
 | A cloud deployment | Mermaid `architecture-beta` up to 8 nodes; else D2 |
-| A change | Two flowcharts, before then after, same nodes in the same order and direction |
-| Interactions | Mermaid sequence, 8 messages max |
+| A change | Two flowcharts, before then after: same direction, the kept nodes in the same order |
+| Interactions | Mermaid sequence |
 | A lifecycle or stages | Mermaid state diagram |
 | Dates | Mermaid Gantt |
 | Options | Table: one row per decision driver, one column per option |
 | Risks | Table sorted by severity, worst first |
-| Measurements | Mermaid `xychart-beta` up to 8 bars; else a table |
+| Measurements | Mermaid `xychart-beta`; above its limit, a table |
 | Volumes from A to B | Table |
 | A data model | Mermaid ER diagram |
 
@@ -34,8 +34,8 @@ Replace a Mermaid `C4*`, `timeline` or `quadrantChart` chart by the visual of it
 
 ## Limits
 
-Per diagram: 10 nodes, 12 edges, 6 words per label. Per RFC: 6 diagrams; per ADR: 1. Over a limit,
-split by question or raise the level of detail.
+`scripts/check-readability.sh --help` lists the limits; the ones of a flowchart apply to every
+diagram. Over a limit, split by question or raise the level of detail.
 
 ## Colors and legend
 
@@ -65,35 +65,44 @@ Before:
 
 ```mermaid
 flowchart LR
-  shop["Web shop"]:::unchanged -->|writes each order| db[("Orders database")]:::unchanged
-  job["Nightly export"]:::removed -->|reads all orders| db
-  job -->|sends a file| carrier["Carrier"]:::external
+  shop["Web shop"]:::unchanged -->|writes orders| db[("Orders database")]:::unchanged
+  db -->|read at night| job["Nightly export"]:::removed
+  job -->|order file| carrier["Carrier"]:::external
+  job -->|stock file| stock["Stock service"]:::changed
+  job -->|errors| mail["Support mailbox"]:::removed
+  classDef changed fill:#fff3bf,stroke:#e67700,color:#111
   classDef removed fill:#ffe3e3,stroke:#c92a2a,color:#111,stroke-dasharray:5 5
   classDef unchanged fill:#f1f3f5,stroke:#868e96,color:#111
   classDef external fill:#e7f5ff,stroke:#1971c2,color:#111
 ```
 
-The carrier learns about an order only after the nightly export.
+One failed night stops the carrier, the stock and the error report together.
 
-Legend: dashed red is removed, gray is unchanged, blue is external.
+Legend: yellow is changed, dashed red is removed, gray is unchanged, blue is external.
 
 After:
 
 ```mermaid
 flowchart LR
-  shop["Web shop"]:::unchanged -->|writes each order| db[("Orders database")]:::unchanged
-  relay["Order relay"]:::new -->|reads new orders| db
-  relay -->|sends each order| carrier["Carrier"]:::external
+  shop["Web shop"]:::unchanged -->|writes orders| db[("Orders database")]:::unchanged
+  db -->|each new order| relay["Order relay"]:::new
+  relay -->|one order| carrier["Carrier"]:::external
+  relay -->|one order| stock["Stock service"]:::changed
+  relay -->|rejected order| retry["Retry queue"]:::new
+  retry -->|after one hour| relay
   classDef new fill:#d3f9d8,stroke:#2b8a3e,color:#111
+  classDef changed fill:#fff3bf,stroke:#e67700,color:#111
   classDef unchanged fill:#f1f3f5,stroke:#868e96,color:#111
   classDef external fill:#e7f5ff,stroke:#1971c2,color:#111
 ```
 
-The carrier learns about an order in seconds, and no nightly job is left to fail.
+A rejected order waits alone, and the carrier and the stock still receive the others.
 
-Legend: green is new, gray is unchanged, blue is external.
+Legend: green is new, yellow is changed, gray is unchanged, blue is external.
 
 ## Sample: D2
+
+This shows the syntax.
 
 ```d2
 direction: right
@@ -127,13 +136,17 @@ light and on a dark page: give it an opaque background.
 
 Work in a temporary folder.
 
-1. Render every Mermaid block of the doc: `mmdc -i <doc> -o <dir>/out.md -e png -b white -s 2`, then
-   again with `-t dark -b '#0d1117'`. When Chrome is missing, pass `-p <json>` with
+1. Write each Mermaid block of the doc to its own `<name>.mmd` and render it alone:
+   `mmdc -i <name>.mmd -o <name>.png -b white -s 2`, then again to `<name>-dark.png` with
+   `-t dark -b '#0d1117'`. When Chrome is missing, pass `-p <json>` with
    `{"executablePath": "<path of an installed Chrome or Chromium>"}`.
 2. Render each D2 source: `d2 --pad 20 <name>.d2 <name>.svg`, then open the SVG in a browser.
 3. Open each image. Fix and render again until: every label is whole and readable, no edge crosses
-   a node, before and after line up, the colors match the legend, and the caption's takeaway is
-   visible in the picture.
+   a node, the kept nodes of before and after are in the same order, the colors match the legend,
+   and the caption's takeaway is visible in the picture. Never drop a true node or edge to align
+   two charts. After three tries, keep the best and put `Not fixed: <visual>, <what is left>` in
+   the reply.
 
-When a renderer is missing, or fails for a reason other than the source, do not install it: put
-`Not rendered: <visual>, <reason>` in the reply, one line per visual.
+A tiled or cut image is a failure of the renderer. When a renderer is missing, or fails for a reason
+other than the source, do not install it: put `Not rendered: <visual>, <reason>` in the reply, one
+line per visual.

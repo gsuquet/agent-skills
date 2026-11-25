@@ -57,7 +57,7 @@ its readers look.
    left and the doc passes the [readability gate](#readability).
 5. **Finish.** When the doc fails the readability gate, go back to step 4. Link the doc from the
    README of its repository, or of `<hub>` when it has one; a README needs no link. Reply with the path, one sentence on what the doc covers, the
-   untested commands and the visuals not rendered. Done when the reply is sent.
+   untested commands, one verdict per checklist item and the visuals not rendered. Done when the reply is sent.
 
 ## Readability
 
@@ -66,19 +66,25 @@ Decisions come first, each fact is written once, and a visual replaces text.
 - **Visuals.** Before you draw or change a visual, read
   [references/visuals.md](references/visuals.md).
 - **Detail.** The doc keeps one line and a link for each: evidence goes to the study, work packages
-  to the tracker, implementation design to a design page. An RFC longer than its limit has detail
-  to move; `--help` of `scripts/check-readability.sh` lists the limits.
+  to the tracker, implementation design to a design page. When that place does not exist, ask the
+  user where the detail goes: never write a link you did not open or create. A doc longer than its
+  limit has detail to move; `--help` of `scripts/check-readability.sh` lists every limit.
 - **Names.** Link to a heading with a readable name instead of a code invented for the doc (D7,
   WP2). Real ticket, PR/MR and ADR references stay.
 - **Decisions.** An RFC has a table `Decision | Why | Cost | Reversible` in its Summary, one row per
-  decision, 5 rows max. Above 5, write peer RFCs: each stands alone, and none is the parent.
-  Reversible states yes or no, and how. When you do not know it, ask the user.
-- **Change.** An RFC that changes something shows before and after in its Summary, as two charts.
+  decision. Above the limit, write peer RFCs: each stands alone, and none is the parent. One peer
+  carries `supersedes:`; the others link the old RFC in References. Reversible starts with yes or
+  no, then how or why. When you do not know it, ask the user; only a draft may say open, with a link
+  to Open questions.
+- **Change.** An RFC that replaces or removes something shows before and after in its Summary, as
+  two charts, unless the 25-word rule of [references/visuals.md](references/visuals.md) waives them.
 
 The **readability gate**, run on every doc:
 
-1. Run `scripts/check-readability.sh --type <type> <file>` and fix each finding in the doc. Done
-   when it exits 0. Pass `--allow-code` only for a real name (D2, S3).
+1. Run `scripts/check-readability.sh --type <type> <file>` and fix each finding in the doc. The type
+   is the one of step 2, `adr`, `study-index` (the landing page of a study), or `other` when none
+   fits. When you update a doc, add `--base <default branch>`: an existing finding does not block.
+   Allow a code only when it is a real name. Done when it exits 0.
 2. Read [assets/readability-checklist.md](assets/readability-checklist.md) and check the doc against
    every item. Done when every item passes and the script still exits 0.
 3. Follow "Render and look" of [references/visuals.md](references/visuals.md) when the doc holds a
@@ -101,13 +107,13 @@ track and 5 on the full track; it ends early when every decider has approved.
    PR/MR with [describe-change](../describe-change/SKILL.md). Done when `scripts/check-rfc.sh <file>`
    exits 0 and the gate passes.
 2. **Review.** Set `review:` to the PR/MR URL and fill every field. Done when
-   `scripts/check-rfc.sh <file> --target review` exits 0 and the readability gate passes, then
-   `status: review` and `updated:` are set and the PR/MR is ready for review.
+   `scripts/check-rfc.sh <file> --target review` exits 0 and the readability gate passes with
+   `--status review`, then `status: review` and `updated:` are set and the PR/MR is ready for review.
 3. **Decide.** After the review window, record what the deciders decided, with the Decision block
-   of [assets/rfc.md](assets/rfc.md), and set `status:` and `updated:`.
-   - accepted: run `scripts/check-rfc.sh <file> --target accepted` before you change `status:`,
-     then run `scripts/rfc-to-adr.sh <file>` and commit the ADR in the same PR/MR. The ADR passes
-     the readability gate; fix a finding in the RFC and run `rfc-to-adr.sh` again.
+   of [assets/rfc.md](assets/rfc.md). Run `scripts/check-rfc.sh <file> --target <decided status>`
+   until it exits 0, then set `status:` and `updated:`.
+   - accepted: then run `scripts/rfc-to-adr.sh <file>` and commit the ADR in the same PR/MR. The ADR
+     passes the readability gate; fix a finding in the RFC and run `rfc-to-adr.sh` again.
    - rejected: the PR/MR is merged anyway, so the reason stays in the repository.
    - withdrawn: from draft or review; the PR/MR is merged or closed with the reason.
 
@@ -117,7 +123,7 @@ track and 5 on the full track; it ends early when every decider has approved.
    `scripts/check-rfc.sh` exits 0 on both files.
 5. **Finish.** When an RFC or ADR you wrote in this run (not one `supersede.sh` updated) fails the readability gate, fix it first. Reply with
    the RFC path, its status, the ADR path when there is one, the last `check-rfc.sh` and
-   `check-readability.sh` output, and the visuals not rendered. Done when the reply is sent.
+   `check-readability.sh` output, one verdict per checklist item, and the visuals not rendered. Done when the reply is sent.
 
 Each script prints its rules and exit codes with `--help`. Read
 [references/rfc-sources.md](references/rfc-sources.md) only when the user asks why the template or

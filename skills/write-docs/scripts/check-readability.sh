@@ -23,6 +23,8 @@ MAX_BARS=8
 MAX_DECISIONS=5
 # A family of codes (D7, D12) is reported from this number of occurrences.
 MIN_CODE_USES=2
+# Real names that look like codes: priorities, percentiles and products (awk regex).
+REAL_NAMES='P[1-5]|P50|P9[059]|S3|EC2|D2'
 
 usage() {
     cat << EOF
@@ -34,28 +36,35 @@ Checks Markdown documents, whatever their template, against the readability limi
 Types: rfc, adr, concept, how-to, runbook, readme, study-index, reference, tutorial, other.
 
   word-limit         words outside fenced blocks, front matter, HTML comments and link targets;
-                     prose, headings, tables and the metadata list count. Max:
+                     prose, headings, tables and the metadata list count; ## Decision and
+                     ## Implementation of the RFC template of this skill do not. Max:
                        rfc ${MAX_WORDS_RFC}, adr ${MAX_WORDS_ADR}, concept ${MAX_WORDS_CONCEPT}, how-to ${MAX_WORDS_HOW_TO}, runbook ${MAX_WORDS_RUNBOOK},
                        readme ${MAX_WORDS_README}, study-index ${MAX_WORDS_STUDY_INDEX}; reference, tutorial, other: no limit
   diagram-count      diagrams in the document, max: rfc ${MAX_DIAGRAMS_RFC}, adr ${MAX_DIAGRAMS_ADR}; others: no limit. A diagram
                      is a mermaid, d2, plantuml or dot block, or a local .svg or .excalidraw image
-                     on its own line
+                     on its own line; without a source file (.d2, .mmd, ...) next to it, an image that
+                     links elsewhere or is named logo, badge, icon, banner or shield is not one
   diagram-nodes      nodes of a Mermaid flowchart, subgraphs not counted, max: ${MAX_NODES}
   diagram-edges      visible edges of a Mermaid flowchart ("a & b --> c" has 2), max: ${MAX_EDGES}
   diagram-label      words of a node, edge or subgraph label of a Mermaid flowchart, max: ${MAX_LABEL_WORDS}
   sequence-messages  messages of a Mermaid sequence diagram, max: ${MAX_MESSAGES}
   xychart-bars       bars of a Mermaid xychart, all series together, max: ${MAX_BARS}
-  diagram-caption    the first text under each diagram must be a paragraph; a "Legend:" line does
-                     not count as the caption
+  diagram-caption    the first text under each diagram must be a paragraph; a "Legend:" line paragraph
+                     does not count as the caption
   diagram-type       Mermaid C4*, timeline and quadrantChart are not allowed
   invented-code      a family of 1 or 2 capital letters and a number (D7, WP2), used ${MIN_CODE_USES} times or
-                     more; inline code, fenced blocks, URLs and link targets are skipped
-  decision-table     rfc only: needs a table whose header has Decision, Why, Cost and Reversible,
-                     with at least 1 row
-  decision-reversible  rfc only: each Reversible cell holds an answer: not empty, not a dash, not
-                     "not stated", "not assessed", "unknown" or "TBD"
+                     more; inline code, code blocks, URLs and link targets are skipped. Real names
+                     (P1 to P5, P50, P90, P95, P99, S3, EC2, D2) count only next to another code
+                     of their family; "<!-- readability: allow-code <regex> -->" in the document
+                     adds names
+  decision-table     rfc only: the Summary section needs a table with the columns Decision, Why, Cost
+                     and Reversible, with at least 1 row and no empty cell
+  decision-reversible  rfc only: each Reversible cell starts with yes or no, then says how or why. While
+                     the status is draft, "open" with a link to #open-questions passes. A cell that
+                     says no contradicts "reversibility: two-way"
   decision-cap       rfc only: rows of the decision tables, and "### " headings of "## Decisions",
                      max: ${MAX_DECISIONS} each; above that, split into peer RFCs
+  doc-type           the rfc: or adr: number of the front matter contradicts --type
   unclosed-block     a fence, front matter or HTML comment that never closes hides text
 
 Not checked here: repetition, caption quality, legend and colors. Review them by hand.
@@ -64,6 +73,11 @@ Options:
   --type <type>         type of every file given (required)
   --allow-code <regex>  real name that is not an invented code; matches the whole code, for
                         example 'S3' or 'Q[1-4]' (repeatable, awk regex)
+  --base <git-ref>      report a finding that the version of the file in <git-ref> already has as
+                        "existing", without failing; a worse count, and every finding of a file that
+                        <git-ref> does not have, still fails
+  --status <status>     check an RFC as if it had this status
+  --count-decisions     print the number of rows of the decision table instead
   -h, --help            show this help
 
 Exit codes: 0 pass, 1 findings, 2 usage error.
@@ -77,6 +91,9 @@ usage_error() {
 
 type=""
 allow=""
+base=""
+forced_status=""
+mode=findings
 files=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -95,6 +112,20 @@ while [[ $# -gt 0 ]]; do
                 usage_error "--allow-code: invalid regex '$2'"
             allow="${allow:+${allow}|}($2)"
             shift 2
+            ;;
+        --base)
+            [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || usage_error "--base needs a Git ref"
+            base="$2"
+            shift 2
+            ;;
+        --status)
+            [[ $# -ge 2 && -n "$2" ]] || usage_error "--status needs a status"
+            forced_status="$2"
+            shift 2
+            ;;
+        --count-decisions)
+            mode=rows
+            shift
             ;;
         --)
             shift
@@ -142,10 +173,32 @@ for file in "${files[@]}"; do
     [[ -f "${file}" && -r "${file}" ]] || usage_error "cannot read '${file}'"
 done
 
-# check <file>: print one "line: rule: message" per finding, sorted by line. The awk program avoids regex intervals ({n,m}) and
-# gawk-only features so that the BSD awk of macOS runs it too.
+# front_matter <file>: print the number of the line that closes the front matter, 0 without one, or
+# "unclosed". A leading "---" whose text is not YAML is a thematic break: it hides nothing.
+front_matter() {
+    LC_ALL=C awk '
+        { sub(/\r$/, "") }
+        NR == 1 { sub(/^\357\273\277/, ""); if ($0 != "---") exit; next }
+        NR == 2 && $0 !~ /^([A-Za-z_"\047][^:]*:([ \t]|$)|#|---$|\.\.\.$)/ { bad = 1; exit }
+        $0 == "---" || $0 == "..." { end = NR; exit }
+        $0 !~ /^([ \t]|[A-Za-z0-9_"\047][^:]*:([ \t]|$)|#|-([ \t]|$)|[]}]|$)/ { bad = 1; exit }
+        END { print end ? end : (NR < 2 || bad ? 0 : "unclosed") }
+    ' < "$1"
+}
+
+# check <file> <dir>: print one "line: rule: message" per finding, sorted by line. <dir> holds the
+# images. The awk program avoids regex intervals ({n,m}) and gawk-only features so that the BSD awk
+# of macOS runs it too.
 check() {
-    LC_ALL=C ALLOW="${allow}" awk -v type="${type}" \
+    local front_end front_unclosed=0
+    front_end="$(front_matter "$1")"
+    [[ "${front_end}" != unclosed ]] || {
+        front_end=0
+        front_unclosed=1
+    }
+    LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C ALLOW="${allow}" DOC_DIR="$2" awk -v type="${type}" -v mode="${mode}" \
+        -v front_end="${front_end}" -v front_unclosed="${front_unclosed}" \
+        -v forced_status="${forced_status}" -v real_names="${REAL_NAMES}" \
         -v max_words="${max_words}" -v max_diagrams="${max_diagrams}" \
         -v max_nodes="${MAX_NODES}" -v max_edges="${MAX_EDGES}" \
         -v max_label="${MAX_LABEL_WORDS}" -v max_messages="${MAX_MESSAGES}" \
@@ -154,9 +207,12 @@ check() {
     function finding(line, rule, message) {
         printf "%d: %s: %s\n", line, rule, message
     }
-    # Number of whitespace-separated tokens that hold more than punctuation.
+    # Number of whitespace-separated tokens that hold more than punctuation, as a reader sees them:
+    # no HTML tag, no entity; an unspaced dash separates two words.
     function words(s, parts, n, i, count) {
-        gsub(/<[bB][rR][ \t]*\/?>/, " ", s)
+        gsub(/<\/?[A-Za-z][A-Za-z0-9-]*([ \t\/][^<>]*)?>/, " ", s)
+        gsub(/&#?[A-Za-z0-9]+;/, " ", s)
+        gsub(/\342\200[\223\224]|---*/, " ", s)
         n = split(s, parts, /[ \t\n]+/)
         count = 0
         for (i = 1; i <= n; i++) {
@@ -191,7 +247,9 @@ check() {
         while (s != "") {
             if (in_comment) {
                 i = index(s, "-->")
-                if (!i) return out
+                if (!i) { comment = comment " " s; return out }
+                comment = comment " " substr(s, 1, i - 1)
+                read_comment(comment)
                 in_comment = 0
                 s = substr(s, i + 3)
                 continue
@@ -199,13 +257,69 @@ check() {
             i = index(s, "<!--")
             if (!i) return out s
             out = out substr(s, 1, i - 1)
-            # Inside inline code: literal text.
-            if (count_char(out, "`") % 2) { out = out "<!--"; s = substr(s, i + 4); continue }
+            # Escaped, or inside inline code: literal text.
+            if (out ~ /\\$/ || count_char(out, "`") % 2) { out = out "<!--"; s = substr(s, i + 4); continue }
             in_comment = 1
+            comment = ""
             comment_line = NR
             s = substr(s, i + 4)
         }
         return out
+    }
+    function read_comment(s) {
+        if (!sub(/^[ \t]*readability:[ \t]*allow-code[ \t]+/, "", s)) return
+        sub(/[ \t]+$/, "", s)
+        if (s != "") allow = allow (allow == "" ? "" : "|") "(" s ")"
+    }
+    # Width of a string, with tab stops of 4, when it starts at a column.
+    function width(s, column, i, start) {
+        start = column
+        for (i = 1; i <= length(s); i++) {
+            if (substr(s, i, 1) == "\t") column += 4 - column % 4
+            else column++
+        }
+        return column - start
+    }
+    function indent(s) {
+        match(s, /^[ \t]*/)
+        return width(substr(s, 1, RLENGTH), 0)
+    }
+    function is_rule(s) {
+        gsub(/[ \t]/, "", s)
+        return s ~ /^(---+|\*\*\*+|___+)$/
+    }
+    # Find the list items, footnotes and admonitions that hold a line. Sets base (the column where
+    # their content starts), indented (the line is an indented code block) and content (the line
+    # without its list markers). The quoted lines have their own stack.
+    function read_containers(s, ind, spaces, marker, parts) {
+        content = s
+        indented = 0
+        if (s ~ /^[ \t]*$/) { paragraph = 0; return }
+        ind = indent(s)
+        while (depth[quoted] && ind < item[quoted, depth[quoted]]) depth[quoted]--
+        base = depth[quoted] ? item[quoted, depth[quoted]] : 0
+        if (ind - base >= 4) {
+            if (!paragraph) indented = 1
+            can_fence = 0
+            return
+        }
+        can_fence = 1
+        while (!is_rule(content) && match(content, /^[ \t]*([-*+]|[0-9]+[.)])([ \t]+|$)/)) {
+            marker = substr(content, 1, RLENGTH)
+            content = substr(content, RLENGTH + 1)
+            parts = marker
+            sub(/[ \t]+$/, "", parts)
+            spaces = width(substr(marker, length(parts) + 1), 0)
+            # ind: the column where the content of the marker starts.
+            base = (depth[quoted] && first_marker ? ind : 0) + width(parts, 0) + (spaces > 4 || content == "" ? 1 : spaces)
+            first_marker = 1
+            ind = base
+            item[quoted, ++depth[quoted]] = base
+        }
+        first_marker = 0
+        if (content ~ /^[ \t]*(!!!|\?\?\?\+?|===)[ \t]/ || content ~ /^[ \t]*\[\^[^]]*\]:/)
+            item[quoted, ++depth[quoted]] = ind + 4
+        paragraph = !(content ~ /^[ \t]*(#+([ \t]|$)|$)/ || is_rule(content))
     }
     function new_diagram(line) {
         diagrams++
@@ -216,17 +330,50 @@ check() {
         finding(line, "diagram-caption", "no caption paragraph under the diagram")
         caption_for = 0
     }
-    function is_diagram_image(s, target) {
-        if (s !~ /^[ \t]*(\[?!\[|<img[ \t])/) return 0
-        if (match(s, /!\[[^]]*\]\([^ \t)]*/)) {
+    function has_source(target, stem, exts, n, i, path, unused, found) {
+        if (target ~ /\.(excalidraw|drawio)(\.svg|\.png)?$/) return 1
+        stem = target
+        sub(/\.[^.\/]*$/, "", stem)
+        n = split("d2 mmd puml plantuml dot gv excalidraw drawio", exts, " ")
+        for (i = 1; i <= n; i++) {
+            path = ENVIRON["DOC_DIR"] "/" stem "." exts[i]
+            found = (getline unused < path) >= 0
+            if (found) { close(path); return 1 }
+        }
+        return 0
+    }
+    # A local .svg or .excalidraw image. Without a source file next to it, an image that links to
+    # another page or that is named as a logo or a badge is decoration.
+    function is_diagram_image(s, target, rest, link) {
+        sub(/^[ \t]+/, "", s)
+        while (match(s, /^<(p|picture|source|div|center|figure|span)([ \t][^<>]*)?>[ \t]*/)) s = substr(s, RLENGTH + 1)
+        link = ""
+        if (match(s, /^<a[ \t][^<>]*>[ \t]*/)) {
+            link = attribute(substr(s, 1, RLENGTH), "href")
+            s = substr(s, RLENGTH + 1)
+        }
+        while (match(s, /^<(p|picture|source|div|center|figure|span)([ \t][^<>]*)?>[ \t]*/)) s = substr(s, RLENGTH + 1)
+        if (s !~ /^(\[?!\[|<img[ \t])/) return 0
+        if (match(s, /!\[[^]]*\]\((<[^>]*>|[^ \t)]*)/)) {
             target = substr(s, RSTART, RLENGTH)
+            rest = substr(s, RSTART + RLENGTH)
             sub(/^!\[[^]]*\]\(/, "", target)
-        } else if (match(s, /src="[^"]*"/)) {
-            target = substr(s, RSTART + 5, RLENGTH - 6)
-        } else return 0
-        if (target ~ /^[A-Za-z][A-Za-z0-9+.-]*:/ || target ~ /^\/\//) return 0
+            gsub(/[<>]/, "", target)
+            if (s ~ /^\[!\[/ && match(rest, /\]\([^ \t)]*/)) link = substr(rest, RSTART + 2, RLENGTH - 2)
+        } else target = attribute(s, "src")
+        if (target == "" || target ~ /^[A-Za-z][A-Za-z0-9+.-]*:/ || target ~ /^\/\//) return 0
         sub(/[?#].*$/, "", target)
-        return tolower(target) ~ /\.(svg|excalidraw|excalidraw\.png)$/
+        if (tolower(target) !~ /\.(svg|excalidraw|excalidraw\.png)$/) return 0
+        if (has_source(target)) return 1
+        if (link != "" && link != target) return 0
+        sub(/^.*\//, "", target)
+        return tolower(target) !~ /logo|badge|icon|banner|shield/
+    }
+    # Value of an HTML attribute, with double or single quotes.
+    function attribute(s, name, value) {
+        if (!match(s, name "=(\"[^\"]*\"|\047[^\047]*\047)")) return ""
+        value = substr(s, RSTART + length(name) + 2, RLENGTH - length(name) - 3)
+        return value
     }
     # Record the invented codes of a line of text.
     function scan_codes(s, i, code, before, before2, after, family) {
@@ -236,7 +383,9 @@ check() {
         open_code = 0
         gsub(/``[^`]*``/, " ", s)
         gsub(/`[^`]*`/, " ", s)
-        if (s ~ /^[ \t]*\[[^]]*\]:/) return
+        if (s ~ /^[ \t]*\[[^]^][^]]*\]:/) return
+        sub(/^[ \t]*\[\^[^]]*\]:/, " ", s)
+        gsub(/\[\^[^]]*\]/, " ", s)
         if ((i = index(s, "`")) > 0) {
             open_code = 1
             s = substr(s, 1, i - 1)
@@ -246,22 +395,44 @@ check() {
         gsub(/[A-Za-z][A-Za-z0-9+.-]*:\/\/[^ \t<>)|]*/, " ", s)
         gsub(/<\/?[A-Za-z][^<>]*>/, " ", s)
         s = "  " s " "
+        # Emphasis with underscores.
+        gsub(/[ \t(|]__?/, " ", s)
+        gsub(/__?[ \t).,;:|]/, " ", s)
         while (match(s, /[A-Z][A-Z]?[0-9]+/)) {
             code = substr(s, RSTART, RLENGTH)
             before = substr(s, RSTART - 1, 1)
             before2 = substr(s, RSTART - 2, 1)
             after = substr(s, RSTART + RLENGTH, 1)
-            # Keep two characters, for the context of the next code.
-            s = substr(s, RSTART + RLENGTH - 2)
-            if (before ~ /[A-Za-z0-9_.#]/ || after ~ /[A-Za-z0-9_]/) { s = "  " substr(s, 3); continue }
-            # A range or a list (B1-B5, T1/T2) holds codes, other compound names do not.
-            if (before ~ /[-\/]/ && before2 !~ /[0-9]/) { s = "  " substr(s, 3); continue }
-            # Replace the code by a digit: it is not matched again.
-            s = " 0" substr(s, 3)
-            if (ENVIRON["ALLOW"] != "" && code ~ ("^(" ENVIRON["ALLOW"] ")$")) continue
+            # Drop the code and the word it is part of. The character that is left gives the context
+            # of the next code: \002 after a code, x after anything else.
+            s = substr(s, RSTART + RLENGTH)
+            if (before ~ /[A-Za-z0-9_.#]/ || after ~ /[A-Za-z0-9_]/ ||
+                # A range or a list (B1-B5, T1/T2) holds codes, other compound names do not.
+                (before ~ /[-\/]/ && before2 != "\002")) {
+                sub(/^[A-Za-z0-9_]+/, "", s)
+                s = " x" s
+                continue
+            }
+            s = " \002" s
+            ncodes++
+            code_of[ncodes] = code
+            code_at[ncodes] = NR
+        }
+    }
+    # Group the codes by family, once the allowed codes of the whole document are known. A built-in
+    # name counts only next to a code of its family that is not one: D1 and D2 are invented codes.
+    function count_codes(i, code, family, pass) {
+        for (pass = 1; pass <= 2; pass++) for (i = 1; i <= ncodes; i++) {
+            code = code_of[i]
+            if (allow != "" && code ~ ("^(" allow ")$")) continue
             family = code
             sub(/[0-9]+$/, "", family)
-            if (!(family in code_uses)) { families[++nfamilies] = family; code_line[family] = NR }
+            if (pass == 1) {
+                if (code !~ ("^(" real_names ")$")) invented[family] = 1
+                continue
+            }
+            if (!(family in invented)) continue
+            if (!(family in code_uses)) { families[++nfamilies] = family; code_line[family] = code_at[i] }
             code_uses[family]++
             if (!((family, code) in code_seen)) {
                 code_seen[family, code] = 1
@@ -269,42 +440,93 @@ check() {
             }
         }
     }
-    # Decision tables: the header is known when the delimiter row under it is read.
-    function cell(s, column, parts) {
+    # Split a table row into cells[1..n] and return n.
+    function read_row(s, cells, n, i) {
         gsub(/\\\|/, "\001", s)
-        sub(/^[ \t]*\|/, "", s)
-        split(s, parts, "|")
-        return parts[column]
+        gsub(/^[ \t]+|[ \t]+$/, "", s)
+        sub(/^\|/, "", s)
+        sub(/\|$/, "", s)
+        n = split(s, cells, "|")
+        for (i = 1; i <= n; i++) gsub(/^[ \t]+|[ \t]+$/, "", cells[i])
+        return n
     }
-    function check_reversible(value, shown) {
+    function is_delimiter_row(s, parts, n, i) {
+        if (s !~ /-/ || s !~ /^[ \t|:-]+$/ || s !~ /[|:]/) return 0
+        n = read_row(s, parts)
+        for (i = 1; i <= n; i++) if (parts[i] !~ /^:?-+:?$/) return 0
+        return n
+    }
+    # Column of a header: the cell that is the name, else the first that holds it.
+    function column_of(name, cells, n, i, found) {
+        found = 0
+        for (i = 1; i <= n; i++) {
+            if (cells[i] == name) return i
+            if (!found && index(cells[i], name)) found = i
+        }
+        return found
+    }
+    function check_reversible(value, shown, answer, reason) {
         shown = value
-        gsub(/^[ \t]+|[ \t]+$/, "", shown)
-        value = tolower(shown)
-        gsub(/<[^<>]*>|&nbsp;|\302\240/, "", value)
-        gsub(/&[mn]dash;|\342\200[\220-\225]|\342\210\222/, "-", value)
-        gsub(/[*_`~. \t]+/, " ", value)
-        gsub(/^ | $/, "", value)
-        if (value ~ /^[ -]*$/ || value ~ /^(not stated|not assessed|unknown|tbd)([^a-z0-9]|$)/)
-            finding(NR, "decision-reversible", "Reversible cell " (shown == "" ? "is empty" : "says " shown) ": write yes or no, and how")
+        reason = ""
+        answer = tolower(value)
+        if (answer ~ /\]\([^)]*#open-questions\)/) reason = "open"
+        gsub(/\]\([^)]*\)|\[/, "", answer)
+        gsub(/<[^<>]*>|&nbsp;|\302\240/, "", answer)
+        gsub(/&[mn]dash;|\342\200[\220-\225]|\342\210\222/, "-", answer)
+        gsub(/[*_`~. \t]+/, " ", answer)
+        gsub(/^ | $/, "", answer)
+        if (answer ~ /^open([^a-z0-9]|$)/ && status == "draft" && reason == "open") return
+        if (answer ~ /^(yes|no)([^a-z0-9\200-\377]|$)/) {
+            reason = answer
+            sub(/^(yes|no)[^a-z0-9\200-\377]*/, "", reason)
+            if (reason != "" && reason !~ /^(not stated|not assessed|not known|unknown|tbd|tbc|todo|n\/a|to be [a-z]+)[^a-z0-9]*$/) {
+                if (answer ~ /^no/ && reversibility == "two-way")
+                    finding(NR, "decision-reversible", "Reversible cell says no, but reversibility: is two-way")
+                return
+            }
+            finding(NR, "decision-reversible", "Reversible cell says " shown ": write how or why")
+            return
+        }
+        finding(NR, "decision-reversible", "Reversible cell " (shown == "" ? "is empty" : "says " shown) ": write yes or no, and how or why" \
+            (answer ~ /^open([^a-z0-9]|$)/ ? "; only a draft can say open, with a link to Open questions" : ""))
     }
-    function scan_table(s, header, n) {
-        if (s !~ /\|/) { in_table = 0; prev_row = ""; return }
+    function scan_table(s, n, c, cells) {
+        if (s ~ /^[ \t]*$/ || s ~ /^[ \t]*(#+[ \t]|[-*+][ \t]|[0-9]+[.)][ \t]|<\/?[A-Za-z])/ || is_rule(s)) {
+            in_table = 0
+            prev_row = ""
+            return
+        }
         if (in_table) {
             if (in_table == 2) {
                 decision_rows++
-                if (type == "rfc") check_reversible(cell(s, reversible_column))
+                split("", cells)
+                read_row(s, cells)
+                if (type == "rfc") {
+                    if (cells[columns["decision"]] == "" || cells[columns["why"]] == "" || cells[columns["cost"]] == "")
+                        finding(NR, "decision-table", "a Decision, Why or Cost cell is empty")
+                    check_reversible(cells[columns["reversib"]])
+                }
             }
             return
         }
-        if (prev_row != "" && s ~ /^[ \t|:-]*-[ \t|:-]*$/) {
-            header = tolower(prev_row)
+        n = is_delimiter_row(s)
+        if (n && prev_row ~ /\|/ && read_row(tolower(prev_row), cells) == n) {
             in_table = 1
-            if (header ~ /decision/ && header ~ /why/ && header ~ /cost/ && header ~ /reversib/) {
-                in_table = 2
-                n = 0
-                while (cell(header, ++n) !~ /reversib/) if (n > 50) break
-                reversible_column = n
-                if (!table_line) table_line = NR - 1
+            for (c in cells) gsub(/[*_`]/, "", cells[c])
+            columns["decision"] = column_of("decision", cells, n)
+            columns["why"] = column_of("why", cells, n)
+            columns["cost"] = column_of("cost", cells, n)
+            columns["reversib"] = column_of("reversible", cells, n)
+            if (!columns["reversib"]) columns["reversib"] = column_of("reversib", cells, n)
+            split("", seen_column)
+            for (c in columns) if (columns[c]) seen_column[columns[c]] = 1
+            n = 0
+            for (c in seen_column) n++
+            if (n == 4) {
+                if (in_summary) {
+                    in_table = 2
+                    if (!table_line) table_line = NR - 1
+                } else if (!misplaced_line) misplaced_line = NR - 1
             }
         }
         prev_row = s
@@ -316,7 +538,7 @@ check() {
     function skip_statement() { while (P <= length(T) && substr(T, P, 1) !~ /^[\n;]$/) P++ }
     function check_label(s, pos, shown, n) {
         gsub(/fa[a-z]?:fa-[a-z0-9-]+/, "", s)
-        gsub(/\\n/, " ", s)
+        gsub(/\\n|#[A-Za-z0-9]+;/, " ", s)
         n = words(s)
         if (n <= max_label) return
         shown = s
@@ -423,9 +645,10 @@ check() {
         skip_blanks()
         if (substr(T, P, 1) == "|") {
             s = substr(T, P + 1)
-            if (match(s, /\|/)) {
-                P += RSTART + 1
-                check_label(label_of(substr(s, 1, RSTART - 1)), pos)
+            # A quoted label can hold a pipe.
+            if (match(s, /^[ \t]*"[^"\n]*"[ \t]*\|/) || match(s, /^[^|]*\|/)) {
+                P += RLENGTH + 1
+                check_label(label_of(substr(s, 1, RLENGTH - 1)), pos)
             }
         }
         return result
@@ -490,17 +713,22 @@ check() {
         for (i = 1; i <= n; i++) {
             part = parts[i]
             sub(/^[ \t]+/, "", part)
-            if (tolower(part) ~ /^(note|loop|alt|else|opt|par|par_over|and|critical|option|break|rect|box|title|participant|actor|create|destroy|links?|properties|details|activate|deactivate|acctitle|accdescr)([ \t:]|$)/) continue
+            # Not an actor named like a keyword: "Links->>B: x".
+            if (tolower(part) !~ /^[a-z_]+[ \t]*(<<)?--?(>|x|\)|\|)[^:]*:/ && tolower(part) ~ /^(note|loop|alt|else|opt|par|par_over|and|critical|option|break|rect|box|title|participant|actor|create|destroy|links?|properties|details|activate|deactivate|acctitle|accdescr)([ \t:]|$)/) continue
             if (part ~ /^[^:]+(->|-x|-\)|-\||\/\/-|\\\\-)[^:]*:/) count++
         }
         return count
     }
-    function count_bars(s, parts, n, i, count, values) {
-        n = split(s, parts, "\n")
+    function count_bars(s, count, values, list) {
+        gsub(/"[^"]*"/, "", s)
         count = 0
-        for (i = 1; i <= n; i++) {
-            if (parts[i] !~ /^[ \t]*bar[ \t"[]/ || !match(parts[i], /\[[^]]*\]/)) continue
-            count += split(substr(parts[i], RSTART + 1, RLENGTH - 2), values, ",")
+        while (match(s, /\n[ \t]*bar[ \t]*[^[\n]*\[[^]]*\]/)) {
+            list = substr(s, RSTART + 1, RLENGTH - 1)
+            s = substr(s, RSTART + RLENGTH)
+            if (list !~ /^[ \t]*bar[ \t[]/) continue
+            sub(/^[^[]*\[/, "", list)
+            sub(/\]$/, "", list)
+            count += split(list, values, ",")
         }
         return count
     }
@@ -543,30 +771,56 @@ check() {
         }
     }
 
+    function close_fence() {
+        open_len = 0
+        if (lang == "mermaid") check_mermaid(open_line)
+        if (is_diagram) caption_for = open_line
+        paragraph = 0
+    }
+    BEGIN { allow = ENVIRON["ALLOW"]; quoted = 0; status = forced_status }
     { sub(/\r$/, "") }
-    NR == 1 && $0 == "---" { in_front = 1; next }
-    in_front { if ($0 == "---") in_front = 0; next }
+    NR == 1 { sub(/^\357\273\277/, "") }
+    NR <= front_end {
+        key = $0
+        value = $0
+        sub(/:.*/, "", key)
+        sub(/^[^:]*:[ \t]*/, "", value)
+        gsub(/^["\047]|["\047]?[ \t]*$/, "", value)
+        if (key == "status" && status == "") status = tolower(value)
+        else if (key == "reversibility") reversibility = value
+        else if ((key == "rfc" || key == "adr") && value ~ /^[0-9]+$/) doc_type = key
+        next
+    }
     {
         line = $0
+        was_quoted = quoted
         if (open_len == 0 && !in_comment) { quoted = sub(/^[ \t]*>([ \t]*>)*[ \t]?/, "", line) }
-        else if (quoted) sub(/^[ \t]*>([ \t]*>)*[ \t]?/, "", line)
+        else if (quoted) {
+            # The quote ends, and its fence with it.
+            if (!sub(/^[ \t]*>([ \t]*>)*[ \t]?/, "", line) && open_len > 0) { close_fence(); quoted = 0 }
+        }
+        if (quoted && !was_quoted) depth[1] = 0
+        if (quoted != was_quoted) paragraph = 0
     }
+    # The list item ends, and its fence with it.
+    open_len > 0 && open_base > 0 && line !~ /^[ \t]*$/ && indent(line) < open_base { close_fence() }
     open_len > 0 {
         n = fence_len(line)
         # Closing fence: same character, at least as long, nothing after it.
-        if (n >= open_len && fence_char == open_char && fence_rest ~ /^[ \t]*$/) {
-            open_len = 0
-            if (lang == "mermaid") check_mermaid(open_line)
-            if (is_diagram) caption_for = open_line
+        if (n >= open_len && fence_char == open_char && fence_rest ~ /^[ \t]*$/ && indent(line) - open_base <= 3) {
+            close_fence()
             next
         }
         if (lang == "mermaid") body[++nbody] = line
         next
     }
-    !in_comment && (n = fence_len(line)) > 0 {
+    !in_comment { read_containers(line) }
+    !in_comment && can_fence && (n = fence_len(content)) > 0 {
         open_len = n
         open_char = fence_char
         open_line = NR
+        open_base = base
+        paragraph = 0
         lang = tolower(fence_rest)
         sub(/^[ \t]*\{?[ \t]*\.?/, "", lang)
         sub(/[ \t{},].*$/, "", lang)
@@ -580,63 +834,183 @@ check() {
         next
     }
     {
-        line = strip_comments(line)
+        if (in_comment) indented = 0
+        if (!indented) line = strip_comments(line)
 
-        text = line
-        if (text ~ /^[ \t]*\[[^]]*\]:[ \t]/) text = ""
-        gsub(/\]\([^)]*\)/, "]", text)
-        total_words += words(text)
-        if (max_words && total_words > max_words && !words_line) words_line = NR
-
-        if (is_diagram_image(line)) {
-            new_diagram(NR)
-            caption_for = NR
-        } else if (caption_for && line !~ /^[ \t]*$/ && line !~ /^[ \t]*<\// && tolower(line) !~ /^[ \t]*[*_]*legend[*_]*:/) {
-            # A heading, list, table, rule, alert, image or HTML block is not a caption.
-            if (line ~ /^[ \t]*(#|\||[-*+][ \t]|[0-9]+[.)][ \t]|---|\*\*\*|___|!\[|\[!|<)/ || words(line) == 0) no_caption(caption_for)
-            caption_for = 0
-        }
-
-        scan_codes(line)
-        scan_table(line)
-
-        if (line ~ /^##?[ \t]/) in_decisions = (tolower(line) ~ /^##[ \t]+decisions[ \t#]*$/)
-        else if (in_decisions && line ~ /^###[ \t]/) {
+        if (!indented && line ~ /^##?[ \t]/) {
+            heading = tolower(line)
+            sub(/^##?[ \t]+/, "", heading)
+            sub(/[ \t#]+$/, "", heading)
+            is_h2 = (line ~ /^##[ \t]/)
+            in_summary = (is_h2 && heading == "summary")
+            in_decisions = (is_h2 && heading == "decisions")
+            # Written after the review, in the RFC template of this skill.
+            not_counted = (type == "rfc" && doc_type == "rfc" && is_h2 && (heading == "decision" || heading == "implementation"))
+        } else if (!indented && in_decisions && line ~ /^###[ \t]/) {
             decision_headings++
             if (decision_headings == max_decisions + 1) headings_line = NR
         }
+
+        # The metadata list of a team template.
+        if (status == "" && tolower(line) ~ /^[-*][ \t]+\**status\**:/) {
+            status = tolower(line)
+            gsub(/^[^:]*:|[* \t]/, "", status)
+        }
+
+        if (indented) { in_table = 0; prev_row = "" }
+        else scan_table(line)
+
+        text = line
+        if (text ~ /^[ \t]*\[[^]^][^]]*\]:[ \t]/) text = ""
+        gsub(/\]\([^)]*\)/, "]", text)
+        if (in_table || text ~ /^[ \t]*\|/) gsub(/\|/, " ", text)
+        if (!not_counted) total_words += words(text)
+        if (max_words && total_words > max_words && !words_line) words_line = NR
+
+        if (line ~ /^[ \t]*$/) in_legend = 0
+        if (!indented && is_diagram_image(line)) {
+            new_diagram(NR)
+            caption_for = NR
+            in_legend = 0
+        } else if (caption_for && line !~ /^[ \t]*$/ && line !~ /^[ \t]*<\// && line !~ /^[ \t]*\[[^]^][^]]*\]:[ \t]/) {
+            # A legend ends with its paragraph.
+            if (tolower(line) ~ /^[ \t]*[*_]*legend[*_]*:/) in_legend = 1
+            # A heading, list, table, rule, alert, image or HTML block is not a caption.
+            else if (indented || line ~ /^[ \t]*(#+([ \t]|$)|\||[-*+][ \t]|[0-9]+[.)][ \t]|!\[|\[!|!!!|\?\?\?|===)/ || is_rule(line)) {
+                no_caption(caption_for)
+            } else if (!in_legend && line ~ /^[ \t]*<(p|div|center|span|figure|figcaption|sub|sup|em|strong|small|i|b)([ \t][^<>]*)?>/) {
+                # An opening tag alone: its text is on the next line.
+                if (words(line) > 0) caption_for = 0
+            } else if (in_legend) caption_for = caption_for
+            else if (line ~ /^[ \t]*<[A-Za-z]/ && line !~ /^[ \t]*<(a|code|kbd|mark|u|https?:)/) no_caption(caption_for)
+            else if (words(line) == 0) no_caption(caption_for)
+            else caption_for = 0
+        }
+
+        if (!indented) scan_codes(line)
     }
     END {
-        if (in_front) finding(1, "unclosed-block", "front matter never closed")
-        if (open_len > 0) finding(open_line, "unclosed-block", "fence never closed")
+        if (mode == "rows") { print decision_rows + 0; exit }
+        if (front_unclosed) finding(1, "unclosed-block", "front matter never closed")
+        if (doc_type != "" && doc_type != type)
+            finding(1, "doc-type", "the front matter is the one of an " doc_type ", not of type " type)
+        # A fence in a quote ends with the quote, and one in a list item with the list.
+        if (open_len > 0 && quoted) close_fence()
+        else if (open_len > 0) finding(open_line, "unclosed-block", "fence never closed")
         if (in_comment) finding(comment_line, "unclosed-block", "HTML comment never closed")
         if (caption_for) no_caption(caption_for)
         if (words_line) finding(words_line, "word-limit", total_words " words, max " max_words " for " type)
         if (diagrams_line) finding(diagrams_line, "diagram-count", diagrams " diagrams, max " max_diagrams " for " type)
+        count_codes()
         for (i = 1; i <= nfamilies; i++) {
             f = families[i]
             if (code_uses[f] >= min_code_uses)
                 finding(code_line[f], "invented-code", "family " f ", " code_uses[f] " uses (" code_list[f] "): link to a heading with a readable name")
         }
         if (type != "rfc") exit
-        if (!table_line) finding(1, "decision-table", "no table with Decision, Why, Cost and Reversible columns")
+        if (!table_line) finding(1, "decision-table", "no table with Decision, Why, Cost and Reversible columns in the Summary section" \
+            (misplaced_line ? ": move the one of line " misplaced_line : ""))
         else if (!decision_rows) finding(table_line, "decision-table", "the decision table has no row")
         if (decision_headings > max_decisions || decision_rows > max_decisions) {
             n = decision_headings > decision_rows ? decision_headings : decision_rows
             finding(headings_line ? headings_line : table_line, "decision-cap", n " decisions, max " max_decisions ": write peer RFCs")
         }
     }
-    ' < "$1" | sort -s -n -k1,1
+    ' | LC_ALL=C sort -s -n -k1,1
+}
+
+# split_existing <base findings> <findings>: print each finding, after "existing" when the base has
+# the same one or a worse count, else after "new".
+split_existing() {
+    LC_ALL=C awk '
+        # Sets K (rule and message without the count), N (count) and C (codes of a family).
+        function parse(s) {
+            sub(/^[0-9]+: /, "", s)
+            N = 0
+            C = ""
+            if (match(s, /^[a-z-]+: [0-9]+ /)) {
+                N = substr(s, 1, RLENGTH)
+                sub(/^[^:]*: /, "", N)
+                N += 0
+                sub(/: [0-9]+ /, ": ", s)
+            } else if (s ~ /^invented-code: /) {
+                match(s, /, [0-9]+ uses \([^)]*\)/)
+                C = substr(s, RSTART + 2, RLENGTH - 2)
+                N = C + 0
+                sub(/^[^(]*\(/, "", C)
+                sub(/\)$/, "", C)
+                s = substr(s, 1, RSTART - 1)
+            }
+            K = s
+        }
+        function contains(all, some, parts, n, i) {
+            n = split(some, parts, ", ")
+            for (i = 1; i <= n; i++) if (!index(", " all ",", ", " parts[i] ",")) return 0
+            return 1
+        }
+        $0 == "" { next }
+        {
+            parse($0)
+            if (FILENAME == ARGV[1]) { nbase++; base_key[nbase] = K; base_n[nbase] = N; base_codes[nbase] = C }
+            else { nhead++; head[nhead] = $0; key[nhead] = K; count[nhead] = N; codes[nhead] = C }
+        }
+        END {
+            # Worst first, so that a count takes the worst base count of its kind.
+            for (round = 1; round <= nhead; round++) {
+                h = 0
+                for (i = 1; i <= nhead; i++) if (!done[i] && (!h || count[i] > count[h])) h = i
+                done[h] = 1
+                best = 0
+                for (i = 1; i <= nbase; i++)
+                    if (!used[i] && base_key[i] == key[h] && base_n[i] >= count[h] && contains(base_codes[i], codes[h]) && (!best || base_n[i] > base_n[best])) best = i
+                state[h] = best ? "existing" : "new"
+                if (best) used[best] = 1
+            }
+            for (i = 1; i <= nhead; i++) print state[i] " " head[i]
+        }
+    ' "$1" "$2"
+}
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/check-readability.XXXXXX")"
+trap 'rm -rf "${tmp}"' EXIT
+
+# base_findings <file>: print the findings of the version of the file in the base.
+base_findings() {
+    local dir name
+    dir="$(dirname "$1")"
+    name="$(basename "$1")"
+    git -C "${dir}" rev-parse --verify --quiet "${base}^{commit}" > /dev/null ||
+        usage_error "--base: no commit '${base}' in the repository of '$1'"
+    git -C "${dir}" cat-file -e "${base}:./${name}" 2> /dev/null || return 0
+    git -C "${dir}" show "${base}:./${name}" > "${tmp}/document"
+    check "${tmp}/document" "${dir}"
 }
 
 status=0
 for file in "${files[@]}"; do
-    findings="$(check "${file}")" || usage_error "cannot check '${file}'"
-    if [[ -n "${findings}" ]]; then
-        while IFS= read -r finding; do
+    check "${file}" "$(dirname "${file}")" > "${tmp}/findings" || usage_error "cannot check '${file}'"
+    if [[ "${mode}" == rows ]]; then
+        cat "${tmp}/findings"
+        continue
+    fi
+    : > "${tmp}/base"
+    if [[ -n "${base}" ]]; then
+        base_findings "${file}" > "${tmp}/base" || exit 2
+    fi
+    split_existing "${tmp}/base" "${tmp}/findings" > "${tmp}/states" || usage_error "cannot compare '${file}'"
+    blocking=false
+    while read -r state finding; do
+        if [[ "${state}" == new ]]; then
             printf '%s:%s\n' "${file}" "${finding}" >&2
-        done <<< "${findings}"
+            blocking=true
+        else
+            printf '%s:%s: existing: %s\n' "${file}" "${finding%%: *}" "${finding#*: }" >&2
+        fi
+    done < "${tmp}/states"
+    if [[ "${blocking}" == true ]]; then
         status=1
+    elif [[ -n "${base}" && -s "${tmp}/findings" ]]; then
+        echo "ok: ${file} adds no finding to ${base}"
     else
         echo "ok: ${file} meets the ${type} readability limits"
     fi
