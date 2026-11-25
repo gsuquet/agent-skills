@@ -3,6 +3,7 @@
 Read this at step 2. Pick one visual, two at most: the smallest one that makes the change clear.
 Keep only the nodes the reviewer needs. Use the diff-shaped variant when the surrounding structure
 already exists and the point is what changes in it. Every block below renders on GitHub and GitLab.
+When a diagram has colors or a caption and write-docs is installed, read its [visuals](../../write-docs/references/visuals.md).
 
 | The change is about | Visual |
 |---|---|

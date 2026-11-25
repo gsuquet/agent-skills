@@ -14,6 +14,8 @@ in SKILL.md. Prints one line per failure on stderr, or one "ok" line on stdout.
               section filled; optional sections filled or "N/A: <reason>"; Operational impact
               N/A rules; options and length limits of the track; Decision is "Pending.".
   accepted    review, plus: Open questions is "None."; Decision filled and standing alone; the
+              Decision has a Context line (required when
+              the RFC moves to accepted, so older RFCs stay valid), 3 lines max; the
               ADR in adr: matches the Decision section (only once status is accepted).
   rejected    review, plus: Decision filled with the rejection; adr: null.
   withdrawn   draft, plus: Decision starts with "Withdrawn on YYYY-MM-DD: <reason>"; adr: null.
@@ -275,6 +277,14 @@ case "${target}" in
             fail "Open questions: must be 'None.': resolve each question or move it to Future work"
         [[ "$(decision_line Status)" =~ ^accepted\ on\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ by\ [^[:space:]] ]] ||
             fail "Decision: needs '- Status: accepted on YYYY-MM-DD by <deciders>'"
+        if grep -q '^- Context:' <<< "${decision}"; then
+            context="$(awk '/^- / { in_context = /^- Context:/ } in_context && NF { print }' <<< "${decision}")"
+            [[ "${context#- Context:}" =~ [^[:space:]] ]] || fail "Decision: '- Context:' is empty"
+            [[ "$(nonblank <<< "${context}")" -le 3 ]] || fail "Decision: Context: 3 lines max"
+        elif [[ "${status}" == review ]]; then
+            # An RFC accepted before this rule does not change, so it stays valid without the line.
+            fail "Decision: needs a '- Context:' line"
+        fi
         [[ -n "$(decision_line Decision)" ]] || fail "Decision: needs a filled '- Decision:' line"
         grep -q '^- Consequences:' <<< "${decision}" || fail "Decision: needs a '- Consequences:' line"
         grep -q '^  - Good: [^[:space:]]' <<< "${decision}" || fail "Decision: needs a '  - Good:' consequence"

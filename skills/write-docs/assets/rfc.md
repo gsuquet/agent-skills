@@ -3,7 +3,7 @@
 Copy the block below into the path that `scripts/next-number.sh rfc <slug>` printed. Replace each
 `<...>` field with text that follows its rule. Keep every heading, in this order. A section marked
 *optional* holds its content or exactly `N/A: <one-line reason>`. `scripts/check-rfc.sh` enforces
-every rule written here.
+the rules written here, and `scripts/check-readability.sh` the Decision table and the limits.
 
 ````markdown
 ---
@@ -28,9 +28,15 @@ superseded-by: null
 
 <2 or 3 sentences: what changes, for whom, and the expected outcome. No background.>
 
+| Decision | Why | Cost | Reversible |
+|---|---|---|---|
+| <one decision, 1 to 5 rows> | <reason, one line> | <what it costs or gives up> | <yes or no, and how or why> |
+
+<before and after: two flowcharts with the same layout, each with a caption and a legend; delete this line when nothing is replaced>
+
 ## Context
 
-<the current state, the problem, and the constraint that forces a decision now; link issues, incidents and dashboards. 15 lines max.>
+<the current state, the problem, and the constraint that forces a decision now; one line and a link for each piece of evidence. 15 lines max.>
 
 ## Goals and non-goals
 
@@ -64,12 +70,12 @@ Non-goals:
 
 ## Proposal
 
-<the design of the chosen option: components, interfaces, config snippets, data flow. Lightweight track: 20 lines max. Full track: add a diagram or a sequence.>
+<how the decisions of the Summary work together, and a link to the design page for the detail. Lightweight track: 20 lines max. Full track: add a diagram of parts or interactions.>
 
 ## Operational impact
 
 - Blast radius: <what breaks, and for whom, if this goes wrong: clusters, namespaces, environments, tenants, state files>
-- Rollout: <ordered steps and environments, the gate between steps, the feature flag if any>
+- Rollout: <ordered steps and environments, the gate between steps, the feature flag if any; link the tickets for the work packages>
 - Rollback: <exact steps and the time to restore; "irreversible after step N" when one-way>
 - Migration: <data, state or API migration and its compatibility window, or "None: <why nothing persisted changes>">
 - Security: <changed trust boundaries, IAM or RBAC, secrets, network exposure, supply chain; or N/A: reason>
@@ -78,7 +84,9 @@ Non-goals:
 
 ## Drawbacks and risks
 
-- <risk, the strongest argument against the proposal first> -> <mitigation>
+| Risk | Severity | Mitigation |
+|---|---|---|
+| <risk, worst severity first> | <high, medium or low> | <mitigation> |
 
 ## Open questions
 
@@ -103,6 +111,8 @@ N/A: not accepted yet.
 
 ## Rules by section
 
+- **Summary:** the decision table holds every decision the deciders accept, in short form; the
+  Decision section records them in full. Above 5 rows, write peer RFCs.
 - **Options considered:** each option is a `### ` heading; `### Do nothing` is always one of
   them. Lightweight track: 1 option plus Do nothing at least. Full track: 2 options plus Do nothing
   at least.
@@ -117,7 +127,8 @@ N/A: not accepted yet.
 
   ```markdown
   - Status: accepted on <YYYY-MM-DD> by <deciders>
-  - Decision: In the context of <scope>, facing <problem>, we decided for <option> and against <other options>, to achieve <goals>, accepting <main downside>.
+  - Context: <scope and problem, 3 lines max>
+  - Decision: <one sentence: we decided for "option" and against "other options", to achieve "goals", accepting "main downside">
   - Consequences:
     - Good: <positive consequence, one bullet each>
     - Bad: <accepted cost or risk, one bullet each>
