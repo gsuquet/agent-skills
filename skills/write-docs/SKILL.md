@@ -83,7 +83,8 @@ The **readability gate**, run on every doc:
 
 1. Run `scripts/check-readability.sh --type <type> <file>` and fix each finding in the doc. The type
    is the one of step 2, `adr`, `study-index` (the landing page of a study), or `other` when none
-   fits. When you update a doc, add `--base <default branch>`: an existing finding does not block.
+   fits. When you update a doc, add `--base <default branch>`: an existing finding does not block
+   (outside a Git repository, every finding is new).
    Allow a code only when it is a real name. Done when it exits 0.
 2. Read [assets/readability-checklist.md](assets/readability-checklist.md) and check the doc against
    every item. Done when every item passes and the script still exits 0.

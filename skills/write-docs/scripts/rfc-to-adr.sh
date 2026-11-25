@@ -7,12 +7,13 @@ usage() {
 Usage: rfc-to-adr.sh <rfc-file>
 
 Writes the ADR of an accepted RFC from assets/adr.md: front matter, the RFC's Decision section
-copied verbatim, and a link back to the RFC. Then sets the RFC's adr: field to the ADR path.
+copied verbatim, a link back to the RFC, and the names its allow-code comments allow. Then sets the RFC's adr: field to the ADR path.
 
 The ADR path is the RFC's adr: value when set, else the one next-number.sh prints. Running it again
 rewrites the same ADR and changes nothing when the RFC did not change.
 
-Refuses unless the RFC status is accepted and check-rfc.sh passes (adr: aside).
+Refuses unless the RFC status is accepted and check-rfc.sh passes (adr: aside), and when the ADR path
+holds another file.
 
 Options:
   -h, --help  show this help
@@ -67,10 +68,14 @@ adr="$(adr_of "${file}" "${here}")"
     exit 1
 }
 adr_path="${root}/${adr}"
+if [[ -e "${adr_path}" && "$(fm_get "${adr_path}" rfc)" != "docs/rfc/$(basename "${file}")" ]]; then
+    echo "error: ${adr} is not the ADR of ${file}: set adr: to null or to the right path" >&2
+    exit 1
+fi
 
 tmp="$(mktemp "${TMPDIR:-/tmp}/rfc-to-adr.XXXXXX")"
 trap 'rm -f "${tmp}"' EXIT
-render_adr "${file}" "${adr}" "${template}" > "${tmp}"
+render_adr "${file}" "${adr}" "${template}" "${here}" > "${tmp}"
 
 if [[ -f "${adr_path}" ]] && cmp -s "${tmp}" "${adr_path}"; then
     result="unchanged"

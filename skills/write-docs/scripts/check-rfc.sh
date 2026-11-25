@@ -267,14 +267,18 @@ done
 
 # Open questions and Decision, by target status.
 stand_alone='see (above|below)|as (described|mentioned|stated) (above|below)|the (section|options?) above'
-# No ADR yet: the rules that an older accepted RFC need not follow apply.
+# No ADR of this RFC yet: the rules that an older accepted RFC need not follow apply.
 undecided=false
-if is_unset "${adr}" || [[ -z "${root}" || ! -f "${root}/${adr}" ]]; then undecided=true; fi
+if is_unset "${adr}" || [[ -z "${root}" || ! -f "${root}/${adr}" ]] || [[ "$(fm_get "${root}/${adr}" rfc)" != "docs/rfc/${name}" ]]; then undecided=true; fi
 
 # check_decision_count: one Decision line per row of the Summary decision table.
 check_decision_count() {
     local rows lines
-    rows="$("${here}/check-readability.sh" --type rfc --count-decisions "${file}")" || rows=0
+    rows="$("${here}/check-readability.sh" --type rfc --count-decisions "${file}" 2> /dev/null)" || rows=""
+    [[ "${rows}" =~ ^[0-9]+$ ]] || {
+        fail "Summary: cannot count the rows of the decision table, check-readability.sh printed '${rows}'"
+        return
+    }
     lines="$(grep -c '^- Decision:[[:space:]]*[^[:space:]]' <<< "${decision}" || true)"
     [[ "${rows}" -gt 0 ]] || {
         fail "Summary: needs a decision table (check-readability.sh --type rfc)"
@@ -289,7 +293,7 @@ check_adr_limits() {
     local tmp path finding findings=""
     path="$(adr_of "${file}" "${here}")"
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/check-rfc.XXXXXX")"
-    render_adr "${file}" "${path}" "${here}/../assets/adr.md" > "${tmp}/adr.md"
+    render_adr "${file}" "${path}" "${here}/../assets/adr.md" "${here}" > "${tmp}/adr.md"
     findings="$("${here}/check-readability.sh" --type adr "${tmp}/adr.md" 2>&1 > /dev/null)" || true
     rm -rf "${tmp}"
     while IFS= read -r finding; do

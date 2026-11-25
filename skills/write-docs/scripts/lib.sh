@@ -110,9 +110,10 @@ adr_of() {
     printf '%s\n' "${adr}"
 }
 
-# render_adr <rfc-file> <adr path> <template>: print the ADR of an RFC.
+# render_adr <rfc-file> <adr path> <template> <scripts dir>: print the ADR of an RFC. The allow-code
+# names go after the Source line, outside the copied Decision.
 render_adr() {
-    local name adr_number decision decision_date up
+    local name adr_number decision decision_date up allowed
     name="$(basename "$1")"
     adr_number="$(basename "$2" | cut -c1-4)"
     decision="$(section "$1" Decision | trim)"
@@ -149,4 +150,6 @@ render_adr() {
                 print line
             }
         ' "$3"
+    allowed="$("$4/check-readability.sh" --type rfc --list-allowed "$1" | paste -s -d ' ' -)"
+    [[ -z "${allowed}" ]] || printf '\n<!-- readability: allow-code %s -->\n' "${allowed}"
 }

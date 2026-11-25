@@ -24,7 +24,7 @@ MAX_DECISIONS=5
 # A family of codes (D7, D12) is reported from this number of occurrences.
 MIN_CODE_USES=2
 # Real names that look like codes: priorities, percentiles and products (awk regex).
-REAL_NAMES='P[1-5]|P50|P9[059]|S3|EC2|D2'
+REAL_NAMES='P[1-5]|P50|P75|P9[059]|S3|EC2|D2'
 
 usage() {
     cat << EOF
@@ -36,8 +36,9 @@ Checks Markdown documents, whatever their template, against the readability limi
 Types: rfc, adr, concept, how-to, runbook, readme, study-index, reference, tutorial, other.
 
   word-limit         words outside fenced blocks, front matter, HTML comments and link targets;
-                     prose, headings, tables and the metadata list count; ## Decision and
-                     ## Implementation of the RFC template of this skill do not. Max:
+                     prose, headings, tables and the metadata list count. In the RFC template of
+                     this skill, ## Decision and the "- YYYY-MM-DD URL" lines of
+                     ## Implementation do not. Max:
                        rfc ${MAX_WORDS_RFC}, adr ${MAX_WORDS_ADR}, concept ${MAX_WORDS_CONCEPT}, how-to ${MAX_WORDS_HOW_TO}, runbook ${MAX_WORDS_RUNBOOK},
                        readme ${MAX_WORDS_README}, study-index ${MAX_WORDS_STUDY_INDEX}; reference, tutorial, other: no limit
   diagram-count      diagrams in the document, max: rfc ${MAX_DIAGRAMS_RFC}, adr ${MAX_DIAGRAMS_ADR}; others: no limit. A diagram
@@ -54,17 +55,19 @@ Types: rfc, adr, concept, how-to, runbook, readme, study-index, reference, tutor
   diagram-type       Mermaid C4*, timeline and quadrantChart are not allowed
   invented-code      a family of 1 or 2 capital letters and a number (D7, WP2), used ${MIN_CODE_USES} times or
                      more; inline code, code blocks, URLs and link targets are skipped. Real names
-                     (P1 to P5, P50, P90, P95, P99, S3, EC2, D2) count only next to another code
-                     of their family; "<!-- readability: allow-code <regex> -->" in the document
-                     adds names
-  decision-table     rfc only: the Summary section needs a table with the columns Decision, Why, Cost
+                     (P1 to P5, P50, P75, P90, P95, P99, S3, EC2, D2) count only next to another code
+                     of their family; "<!-- readability: allow-code <regex>... -->" in the
+                     document adds names, split on spaces
+  allow-code         an allow-code comment holds an invalid regex
+  decision-table     rfc only: the Summary section (a heading of level 1 or 2 that holds "summary") needs a table with the columns Decision, Why, Cost
                      and Reversible, with at least 1 row and no empty cell
-  decision-reversible  rfc only: each Reversible cell starts with yes or no, then says how or why. While
-                     the status is draft, "open" with a link to #open-questions passes. A cell that
+  decision-reversible  rfc only: each Reversible cell starts with yes or no, then says how or why, not
+                     starting with yes, no, unknown or depends. While
+                     the status is draft or withdrawn, "open" with a link to #open-questions passes. A cell that
                      says no contradicts "reversibility: two-way"
   decision-cap       rfc only: rows of the decision tables, and "### " headings of "## Decisions",
                      max: ${MAX_DECISIONS} each; above that, split into peer RFCs
-  doc-type           the rfc: or adr: number of the front matter contradicts --type
+  doc-type           the front matter is the one of an RFC or ADR of this skill, and contradicts --type
   unclosed-block     a fence, front matter or HTML comment that never closes hides text
 
 Not checked here: repetition, caption quality, legend and colors. Review them by hand.
@@ -75,9 +78,12 @@ Options:
                         example 'S3' or 'Q[1-4]' (repeatable, awk regex)
   --base <git-ref>      report a finding that the version of the file in <git-ref> already has as
                         "existing", without failing; a worse count, and every finding of a file that
-                        <git-ref> does not have, still fails
-  --status <status>     check an RFC as if it had this status
-  --count-decisions     print the number of rows of the decision table instead
+                        <git-ref> does not have, still fails. Outside a Git repository, every
+                        finding is new
+  --status <status>     check an RFC as if it had this status: draft, review, accepted, rejected,
+                        withdrawn or superseded
+  --count-decisions     print only the number of rows of the decision table
+  --list-allowed        print only the names of the allow-code comments, one per line
   -h, --help            show this help
 
 Exit codes: 0 pass, 1 findings, 2 usage error.
@@ -87,6 +93,11 @@ EOF
 usage_error() {
     echo "error: $1" >&2
     exit 2
+}
+
+# valid_regex <regex>: succeed when awk accepts the regex, alone and in a group.
+valid_regex() {
+    RE="$1" awk 'BEGIN { x = ("" ~ ENVIRON["RE"]) + ("" ~ ("^(" ENVIRON["RE"] ")$")); exit }' 2> /dev/null
 }
 
 type=""
@@ -108,7 +119,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --allow-code)
             [[ $# -ge 2 && -n "$2" ]] || usage_error "--allow-code needs a regex"
-            RE="^($2)\$" awk 'BEGIN { if ("" ~ ENVIRON["RE"]) exit; exit }' 2> /dev/null ||
+            valid_regex "$2" ||
                 usage_error "--allow-code: invalid regex '$2'"
             allow="${allow:+${allow}|}($2)"
             shift 2
@@ -120,11 +131,19 @@ while [[ $# -gt 0 ]]; do
             ;;
         --status)
             [[ $# -ge 2 && -n "$2" ]] || usage_error "--status needs a status"
-            forced_status="$2"
+            forced_status="$(tr '[:upper:]' '[:lower:]' <<< "$2")"
+            case "${forced_status}" in
+                draft | review | accepted | rejected | withdrawn | superseded) ;;
+                *) usage_error "--status: unknown status '$2'" ;;
+            esac
             shift 2
             ;;
         --count-decisions)
             mode=rows
+            shift
+            ;;
+        --list-allowed)
+            mode=allowed
             shift
             ;;
         --)
@@ -186,25 +205,43 @@ front_matter() {
     ' < "$1"
 }
 
-# check <file> <dir>: print one "line: rule: message" per finding, sorted by line. <dir> holds the
-# images. The awk program avoids regex intervals ({n,m}) and gawk-only features so that the BSD awk
-# of macOS runs it too.
+# check <file> <dir> <status>: print one "line: rule: message" per finding, sorted by line. <dir>
+# holds the images.
 check() {
+    local allowed names="${allow}" line name
+    allowed="$(scan "$1" "$2" "$3" allowed "")" || return 1
+    while read -r line name; do
+        [[ -n "${name}" ]] || continue
+        if valid_regex "${name}"; then
+            names="${names:+${names}|}(${name})"
+        else
+            printf "%s: allow-code: invalid regex '%s' in a comment\n" "${line}" "${name}"
+        fi
+    done <<< "${allowed}" > "${tmp}/invalid"
+    scan "$1" "$2" "$3" findings "${names}" > "${tmp}/scan" || return 1
+    LC_ALL=C sort -s -n -k1,1 "${tmp}/invalid" "${tmp}/scan"
+}
+
+# scan <file> <dir> <status> <mode> <allowed codes>: run the parser. The modes print the findings, the
+# number of decisions (rows), or a line number and a name per allowed code (allowed). The awk program avoids regex intervals ({n,m}) and gawk-only features so that the BSD awk
+# of macOS runs it too.
+scan() {
     local front_end front_unclosed=0
     front_end="$(front_matter "$1")"
     [[ "${front_end}" != unclosed ]] || {
         front_end=0
         front_unclosed=1
     }
-    LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C ALLOW="${allow}" DOC_DIR="$2" awk -v type="${type}" -v mode="${mode}" \
+    LC_ALL=C tr -d '\000' < "$1" | LC_ALL=C ALLOW="$5" DOC_DIR="$2" awk -v type="${type}" -v mode="$4" \
         -v front_end="${front_end}" -v front_unclosed="${front_unclosed}" \
-        -v forced_status="${forced_status}" -v real_names="${REAL_NAMES}" \
+        -v forced_status="$3" -v real_names="${REAL_NAMES}" \
         -v max_words="${max_words}" -v max_diagrams="${max_diagrams}" \
         -v max_nodes="${MAX_NODES}" -v max_edges="${MAX_EDGES}" \
         -v max_label="${MAX_LABEL_WORDS}" -v max_messages="${MAX_MESSAGES}" \
         -v max_bars="${MAX_BARS}" -v max_decisions="${MAX_DECISIONS}" \
         -v min_code_uses="${MIN_CODE_USES}" '
     function finding(line, rule, message) {
+        if (mode != "findings") return
         printf "%d: %s: %s\n", line, rule, message
     }
     # Number of whitespace-separated tokens that hold more than punctuation, as a reader sees them:
@@ -266,10 +303,11 @@ check() {
         }
         return out
     }
-    function read_comment(s) {
+    function read_comment(s, names, n, i) {
+        if (mode != "allowed") return
         if (!sub(/^[ \t]*readability:[ \t]*allow-code[ \t]+/, "", s)) return
-        sub(/[ \t]+$/, "", s)
-        if (s != "") allow = allow (allow == "" ? "" : "|") "(" s ")"
+        n = split(s, names, /[ \t]+/)
+        for (i = 1; i <= n; i++) if (names[i] != "") print comment_line, names[i]
     }
     # Width of a string, with tab stops of 4, when it starts at a column.
     function width(s, column, i, start) {
@@ -475,11 +513,11 @@ check() {
         gsub(/&[mn]dash;|\342\200[\220-\225]|\342\210\222/, "-", answer)
         gsub(/[*_`~. \t]+/, " ", answer)
         gsub(/^ | $/, "", answer)
-        if (answer ~ /^open([^a-z0-9]|$)/ && status == "draft" && reason == "open") return
+        if (answer ~ /^open([^a-z0-9]|$)/ && (status == "draft" || status == "withdrawn") && reason == "open") return
         if (answer ~ /^(yes|no)([^a-z0-9\200-\377]|$)/) {
             reason = answer
             sub(/^(yes|no)[^a-z0-9\200-\377]*/, "", reason)
-            if (reason != "" && reason !~ /^(not stated|not assessed|not known|unknown|tbd|tbc|todo|n\/a|to be [a-z]+)[^a-z0-9]*$/) {
+            if (reason != "" && reason !~ /^(not stated|not assessed|not known|unknown|tbd|tbc|todo|n\/a|to be [a-z]+)[^a-z0-9]*$/ && reason !~ /^(yes|no|unknown|depends)([^a-z0-9\200-\377]|$)/) {
                 if (answer ~ /^no/ && reversibility == "two-way")
                     finding(NR, "decision-reversible", "Reversible cell says no, but reversibility: is two-way")
                 return
@@ -785,10 +823,11 @@ check() {
         value = $0
         sub(/:.*/, "", key)
         sub(/^[^:]*:[ \t]*/, "", value)
+        sub(/[ \t]+#.*$/, "", value)
         gsub(/^["\047]|["\047]?[ \t]*$/, "", value)
+        front[key] = value
         if (key == "status" && status == "") status = tolower(value)
         else if (key == "reversibility") reversibility = value
-        else if ((key == "rfc" || key == "adr") && value ~ /^[0-9]+$/) doc_type = key
         next
     }
     {
@@ -842,10 +881,12 @@ check() {
             sub(/^##?[ \t]+/, "", heading)
             sub(/[ \t#]+$/, "", heading)
             is_h2 = (line ~ /^##[ \t]/)
-            in_summary = (is_h2 && heading == "summary")
+            in_summary = heading
+            gsub(/\{[^}]*\}/, "", in_summary)
+            in_summary = index(in_summary, "summary") > 0
             in_decisions = (is_h2 && heading == "decisions")
             # Written after the review, in the RFC template of this skill.
-            not_counted = (type == "rfc" && doc_type == "rfc" && is_h2 && (heading == "decision" || heading == "implementation"))
+            own_section = (type == "rfc" && is_h2 && front["rfc"] ~ /^[0-9]+$/) ? heading : ""
         } else if (!indented && in_decisions && line ~ /^###[ \t]/) {
             decision_headings++
             if (decision_headings == max_decisions + 1) headings_line = NR
@@ -864,6 +905,8 @@ check() {
         if (text ~ /^[ \t]*\[[^]^][^]]*\]:[ \t]/) text = ""
         gsub(/\]\([^)]*\)/, "]", text)
         if (in_table || text ~ /^[ \t]*\|/) gsub(/\|/, " ", text)
+        not_counted = (own_section == "decision" || (own_section == "implementation" &&
+            line ~ /^[ \t]*-[ \t]+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][ \t]+<?https?:\/\/[^ \t]+[ \t]*$/))
         if (!not_counted) total_words += words(text)
         if (max_words && total_words > max_words && !words_line) words_line = NR
 
@@ -891,6 +934,10 @@ check() {
     }
     END {
         if (mode == "rows") { print decision_rows + 0; exit }
+        if (mode == "allowed") exit
+        # Both have rfc: and adr:. The RFC also has track: and reversibility:, the ADR the RFC path.
+        if (front["rfc"] ~ /^[0-9]+$/ && front["track"] != "" && front["reversibility"] != "") doc_type = "rfc"
+        else if (front["adr"] ~ /^[0-9]+$/ && front["rfc"] ~ /^docs\/rfc\/[0-9]+-/) doc_type = "adr"
         if (front_unclosed) finding(1, "unclosed-block", "front matter never closed")
         if (doc_type != "" && doc_type != type)
             finding(1, "doc-type", "the front matter is the one of an " doc_type ", not of type " type)
@@ -908,15 +955,15 @@ check() {
                 finding(code_line[f], "invented-code", "family " f ", " code_uses[f] " uses (" code_list[f] "): link to a heading with a readable name")
         }
         if (type != "rfc") exit
-        if (!table_line) finding(1, "decision-table", "no table with Decision, Why, Cost and Reversible columns in the Summary section" \
-            (misplaced_line ? ": move the one of line " misplaced_line : ""))
+        if (!table_line) finding(misplaced_line ? misplaced_line : 1, "decision-table", "no table with Decision, Why, Cost and Reversible columns in the Summary section" \
+            (misplaced_line ? ": move this one" : ""))
         else if (!decision_rows) finding(table_line, "decision-table", "the decision table has no row")
         if (decision_headings > max_decisions || decision_rows > max_decisions) {
             n = decision_headings > decision_rows ? decision_headings : decision_rows
             finding(headings_line ? headings_line : table_line, "decision-cap", n " decisions, max " max_decisions ": write peer RFCs")
         }
     }
-    ' | LC_ALL=C sort -s -n -k1,1
+    '
 }
 
 # split_existing <base findings> <findings>: print each finding, after "existing" when the base has
@@ -979,20 +1026,27 @@ base_findings() {
     local dir name
     dir="$(dirname "$1")"
     name="$(basename "$1")"
+    git -C "${dir}" rev-parse --git-dir > /dev/null 2>&1 || {
+        echo "notice: '$1' is not in a Git repository: every finding is new" >&2
+        return 0
+    }
     git -C "${dir}" rev-parse --verify --quiet "${base}^{commit}" > /dev/null ||
         usage_error "--base: no commit '${base}' in the repository of '$1'"
     git -C "${dir}" cat-file -e "${base}:./${name}" 2> /dev/null || return 0
     git -C "${dir}" show "${base}:./${name}" > "${tmp}/document"
-    check "${tmp}/document" "${dir}"
+    # The base keeps its own status: --status is about the new version.
+    check "${tmp}/document" "${dir}" ""
 }
 
 status=0
 for file in "${files[@]}"; do
-    check "${file}" "$(dirname "${file}")" > "${tmp}/findings" || usage_error "cannot check '${file}'"
-    if [[ "${mode}" == rows ]]; then
-        cat "${tmp}/findings"
+    if [[ "${mode}" != findings ]]; then
+        scan "${file}" "$(dirname "${file}")" "${forced_status}" "${mode}" "" > "${tmp}/scan" ||
+            usage_error "cannot check '${file}'"
+        if [[ "${mode}" == allowed ]]; then cut -d ' ' -f 2 "${tmp}/scan"; else cat "${tmp}/scan"; fi
         continue
     fi
+    check "${file}" "$(dirname "${file}")" "${forced_status}" > "${tmp}/findings" || usage_error "cannot check '${file}'"
     : > "${tmp}/base"
     if [[ -n "${base}" ]]; then
         base_findings "${file}" > "${tmp}/base" || exit 2
