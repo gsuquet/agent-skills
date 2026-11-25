@@ -138,13 +138,21 @@ def is_block_start(line):
     return not line.strip() or any(r.match(line) for r in (HEADING, FENCE, RULE, ITEM, ROW, QUOTE))
 
 
+def wraps_number(line):
+    """True for wrapped prose that looks like an item: a list that interrupts a paragraph starts at 1."""
+    item = list_item(line)
+    return bool(item) and item_kind(item.group(2)) == "ordered" and (
+        int(item.group(2).strip()[:-1]) != 1 and not fence_at(line))
+
+
 def join_lines(text, lines, i, labels=False):
     """Join text and the hard-wrapped lines from i on. Returns the text and the next index.
 
     A hard break is kept as \\n (two spaces) or \\r (backslash): no line holds these characters.
     """
     text = text.lstrip()
-    while i < len(lines) and not is_block_start(lines[i]) and not (labels and LABEL.match(lines[i])):
+    while i < len(lines) and (not is_block_start(lines[i]) or wraps_number(lines[i])) and not (
+            labels and LABEL.match(lines[i])):
         if text.endswith("  "):
             text = text.rstrip() + "\n"
         elif re.search(r"(?<!\\)\\$", text):
@@ -246,12 +254,18 @@ def item_blocks(match, rest, ref):
     """The blocks of one list item: the text of its own line is a paragraph or opens a fence."""
     start = len(match.group(1))
     width = start + len(re.match(r"\S+\s", match.group(2)).group(0))
-    if FENCE.match(match.group(3).strip()):
-        return blocks([match.group(3).strip()] + [dedent(x, width) for x in rest], ref)
+    own = match.group(3).strip()
+    fence = FENCE.match(own)
     first = next((indent_of(x) for x in rest if x.strip() and indent_of(x) > start), 0)
-    rest = [dedent(x, min(width, first)) for x in rest]
-    text, n = join_lines(match.group(3), rest, 0)
-    return [para(text, ref)] + blocks(rest[n:], ref)
+    inner = []
+    for line, code in zip(rest, in_fence([own if fence else ""] + rest)[1:]):
+        if not code and list_item(line) and indent_of(line) < width:
+            inner.append("")  # not indented as the text of the item: it starts a list, whatever its number
+        inner.append(dedent(line, width if fence else min(width, first)))
+    if fence:
+        return blocks([own] + inner, ref)
+    text, n = join_lines(match.group(3), inner, 0)
+    return [para(text, ref)] + blocks(inner[n:], ref)
 
 
 def as_paragraph(node):

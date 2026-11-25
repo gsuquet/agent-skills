@@ -78,7 +78,8 @@ Tier limits, all (unverified):
 
 - The description is converted from Markdown to Atlassian Document Format: headings, lists, task
   lists, tables, quotes, rules, fenced code blocks, hard breaks, inline code, bold, links.
-  Hard-wrapped lines are joined. Above the first `## ` heading, a line that starts with a label
+  Hard-wrapped lines are joined, also one that starts with a number other than 1 (`13) to merge`)
+  when it is indented as the paragraph it continues. Above the first `## ` heading, a line that starts with a label
   (`Name: value`, `Name (team): value` or `**Name:** value`, with no indentation and a name of at
   most 31 characters) starts its own paragraph.
 - A change of list kind starts a new list. A block that its container cannot hold follows it, and
