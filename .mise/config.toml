@@ -1,7 +1,5 @@
 [tools]
-d2 = '0.9.0'
 jq = '1.8.1'
-"npm:@mermaid-js/mermaid-cli" = '11.15.0'
 pre-commit = '4.7.0'
 shellcheck = '0.11.0'
 shfmt = '3.14.1'
