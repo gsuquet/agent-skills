@@ -121,7 +121,7 @@ def inline(text, ref=None):
             nodes.extend(ref_nodes(part[2:-2], [{"type": "strong"}], ref))
         else:
             m = re.match(r"\[([^\]]+)\]\(([^)]+)\)", part)
-            href = re.sub(r"\s", "", m.group(2))  # a URL wrapped over two lines
+            href = re.sub(r"[\x00-\x1f\x7f]", "", m.group(2)).strip()  # a wrapped URL holds hard breaks
             nodes.append(text_node(m.group(1), [{"type": "link", "attrs": {"href": href}}]))
     return hard_breaks(nodes)
 
