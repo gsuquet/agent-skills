@@ -35,6 +35,12 @@ import sys
 import uuid
 from pathlib import Path
 
+FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([^\s`]*)[^`]*$")
+HEADING = re.compile(r"^(#{1,6}) (.*)$")
+RULE = re.compile(r"^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$")
+ITEM = re.compile(r"^(\s*)(- \[[ xX]\] |[-*+] |\d+\. )(.*)$")
+# A "Blocked by: 01" line: above the first "## " heading, it starts its own paragraph.
+LABEL = re.compile(r"^[A-Z][\w -]{0,30}:\s")
 INLINE = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))")
 # "ticket 05", "Tickets 05, 09 and 12": the word goes, each number becomes a key.
 REFS = re.compile(r"\b(?i:tickets?) ([0-9]{2}(?:(?:,? and |,? or |, )[0-9]{2})*)\b")
@@ -105,32 +111,117 @@ def para(text, ref=None):
     return {"type": "paragraph", "content": inline(text, ref)}
 
 
-def parse_list(lines, i, indent, ref=None):
-    """Bullet, ordered and task lists, nested by indentation."""
-    items, kind = [], None
+def is_block_start(line):
+    """True for a line that ends a paragraph: blank, or the first line of another block."""
+    return not line.strip() or line.startswith(("|", ">")) or any(
+        r.match(line) for r in (HEADING, FENCE, RULE, ITEM))
+
+
+def join_lines(lines, i):
+    """Join the hard-wrapped lines after line i. Returns the text to add and the next index."""
+    text = ""
+    while i < len(lines) and not is_block_start(lines[i]):
+        text += " " + lines[i].strip()
+        i += 1
+    return text, i
+
+
+def code_block(lines, i):
+    """The fenced block that starts at line i. An unclosed fence runs to the end."""
+    m = FENCE.match(lines[i])
+    indent, fence, lang = len(m.group(1)), m.group(2), m.group(3)
+    code = []
+    i += 1
     while i < len(lines):
-        m = re.match(r"^(\s*)(- \[[ xX]\] |- |\d+\. )(.*)$", lines[i])
-        if not m or len(m.group(1)) < indent:
+        end = lines[i].strip()
+        if len(end) >= len(fence) and set(end) == {fence[0]}:
+            i += 1
+            break
+        line = lines[i]
+        code.append(line[min(indent, len(line) - len(line.lstrip())):])
+        i += 1
+    node = {"type": "codeBlock"}
+    if lang:
+        node["attrs"] = {"language": lang}
+    if code and any(code):
+        node["content"] = [{"type": "text", "text": "\n".join(code)}]
+    return node, i
+
+
+def item_kind(marker):
+    if marker.startswith("- ["):
+        return "task"
+    return "ordered" if marker[0].isdigit() else "bullet"
+
+
+def list_node(kind, items, start):
+    if kind == "task":
+        return {"type": "taskList", "attrs": {"localId": uuid.uuid4().hex[:12]}, "content": items}
+    node = {"type": "orderedList" if kind == "ordered" else "bulletList", "content": items}
+    if kind == "ordered" and start != 1:
+        node["attrs"] = {"order": start}
+    return node
+
+
+def parse_list(lines, i, indent, ref=None):
+    """One bullet, ordered or task list, nested by indentation. A change of kind ends the list.
+
+    A task item holds only text in ADF, so any other block under it ends the task list.
+    """
+    items, kind, start = [], None, 1
+    while i < len(lines):
+        if not lines[i].strip():
+            # Blank lines between two items of the same list, or before an indented block of the item.
+            j = i
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            m = ITEM.match(lines[j]) if j < len(lines) else None
+            same = m and len(m.group(1)) == indent and item_kind(m.group(2)) == kind
+            deeper = j < len(lines) and len(lines[j]) - len(lines[j].lstrip()) > indent
+            if not same and not (deeper and (m or kind != "task")):
+                break
+            i = j
+            if deeper and not m and not FENCE.match(lines[i]):
+                text, after = join_lines(lines, i)
+                if not text:
+                    break
+                items[-1]["content"].append(para(text.strip(), ref))
+                i = after
+            continue
+        fence = FENCE.match(lines[i])
+        if fence:
+            if kind == "task" or len(fence.group(1)) <= indent:
+                break
+            node, i = code_block(lines, i)
+            items[-1]["content"].append(node)
+            continue
+        m = ITEM.match(lines[i])
+        if not m or len(m.group(1)) < indent or RULE.match(lines[i]):
             break
         if len(m.group(1)) > indent:
             if not items:
                 die(f"list item indented without a parent: {lines[i]!r}")
+            if kind == "task" and item_kind(m.group(2)) != "task":
+                break
             nested, i = parse_list(lines, i, len(m.group(1)), ref)
-            items[-1].setdefault("content", []).append(nested)
+            # ADF nests a task list next to the task item, and any other list inside the list item.
+            (items if kind == "task" else items[-1]["content"]).append(nested)
             continue
         marker = m.group(2)
-        k = "task" if marker.startswith("- [") else ("ordered" if marker[0].isdigit() else "bullet")
-        kind = kind or k
-        text = m.group(3)
+        k = item_kind(marker)
+        if kind and k != kind:
+            break
+        if not kind and k == "ordered":
+            start = int(marker[:-2])
+        kind = k
+        more, i = join_lines(lines, i + 1)
+        text = m.group(3).rstrip() + more
         if k == "task":
             attrs = {"localId": uuid.uuid4().hex[:12], "state": "TODO" if marker == "- [ ] " else "DONE"}
             items.append({"type": "taskItem", "attrs": attrs, "content": inline(text, ref)})
         else:
             items.append({"type": "listItem", "content": [para(text, ref)]})
-        i += 1
-    if kind == "task":
-        return {"type": "taskList", "attrs": {"localId": uuid.uuid4().hex[:12]}, "content": items}, i
-    return {"type": "orderedList" if kind == "ordered" else "bulletList", "content": items}, i
+    return list_node(kind, items, start), i
 
 
 def table(rows, ref=None):
@@ -146,11 +237,15 @@ def table(rows, ref=None):
 
 def to_adf(lines, ref=None):
     content, i = [], 0
+    first_section = next((n for n, x in enumerate(lines) if x.startswith("## ")), len(lines))
     while i < len(lines):
         line = lines[i]
-        heading = re.match(r"^(#{1,6}) (.*)$", line)
+        heading = HEADING.match(line)
         if not line.strip():
             i += 1
+        elif FENCE.match(line):
+            node, i = code_block(lines, i)
+            content.append(node)
         elif heading:
             level = {"level": len(heading.group(1))}
             content.append({"type": "heading", "attrs": level, "content": inline(heading.group(2), ref)})
@@ -161,12 +256,27 @@ def to_adf(lines, ref=None):
                 j += 1
             content.append(table(lines[i:j], ref))
             i = j
-        elif re.match(r"^(- |\d+\. )", line):
-            node, i = parse_list(lines, i, 0, ref)
+        elif RULE.match(line):
+            content.append({"type": "rule"})
+            i += 1
+        elif line.startswith(">"):
+            quoted = []
+            while i < len(lines) and lines[i].startswith(">"):
+                quoted.append(lines[i].lstrip(">").strip())
+                i += 1
+            parts = [p.strip() for p in re.split(r"\n{2,}", "\n".join(quoted)) if p.strip()]
+            if parts:
+                content.append({"type": "blockquote", "content": [para(p.replace("\n", " "), ref) for p in parts]})
+        elif ITEM.match(line):
+            node, i = parse_list(lines, i, len(ITEM.match(line).group(1)), ref)
             content.append(node)
         else:
-            content.append(para(line, ref))
-            i += 1
+            text, i = line.strip(), i + 1
+            while i < len(lines) and not is_block_start(lines[i]) and not (
+                    i < first_section and LABEL.match(lines[i])):
+                text += " " + lines[i].strip()
+                i += 1
+            content.append(para(text, ref))
     return {"type": "doc", "version": 1, "content": content}
 
 
@@ -223,9 +333,11 @@ def body_lines(path, cfg):
     lines = Path(path).read_text().splitlines()
     drop = [re.compile(p) for p in cfg.get("dropLines", [])]
     kept = [line for line in lines if not any(p.search(line) for p in drop)]
-    out = []
+    out, fenced = [], False
     for i, line in enumerate(kept):
-        if line.startswith("#"):
+        if FENCE.match(line):
+            fenced = not fenced
+        if not fenced and line.startswith("#"):
             nxt = next((x for x in kept[i + 1:] if x.strip()), None)
             if nxt is None or nxt.startswith("#") and len(nxt.split()[0]) <= len(line.split()[0]):
                 continue

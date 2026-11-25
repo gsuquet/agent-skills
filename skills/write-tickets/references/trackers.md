@@ -76,8 +76,11 @@ Tier limits, all (unverified):
 | Labels | `labels` in the payload; no existence check: Jira creates a label on first use | (unverified) |
 | Issue key | `.key` of the JSON printed by `--json` | (unverified) |
 
-- The description is converted from Markdown to Atlassian Document Format (headings, lists, task
-  lists, tables, code, bold, links). That Jira renders an ADF description sent through
+- The description is converted from Markdown to Atlassian Document Format: headings, lists, task
+  lists, tables, quotes, rules, fenced code blocks, inline code, bold, links. Hard-wrapped lines are
+  joined, except that a `Name: value` line above the first `## ` heading keeps its own paragraph. A
+  change of list kind starts a new list, and so does a block under a task item, which holds only
+  text. That Jira renders an ADF description sent through
   `--from-json` or `--description-file` is unverified: publish with `--max 1` first and check it.
 - `parentIssueId` is documented for sub-tasks. A project where Tasks cannot take an Epic parent
   refuses it; some sites set the epic through an Epic Link custom field instead (unverified).
@@ -113,6 +116,8 @@ and `--apply` deletes it and creates it the right way round.
 - Jira has no conditional edit: a change made between the last read and the write of one issue is
   overwritten.
 - An issue published before `base-NN` rows existed is a conflict as soon as it differs from its draft.
+- A new version of the converter changes the description of an unchanged draft, so `--sync` lists it
+  as an edit, or as a conflict when the issue was edited on Jira since.
 - `--sync` writes the title and the description only. Labels, fields and the epic stay as they are.
 
 ### Jira config (`--config <file.json>`)
