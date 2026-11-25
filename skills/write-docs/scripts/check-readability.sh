@@ -1026,12 +1026,12 @@ base_findings() {
     local dir name
     dir="$(dirname "$1")"
     name="$(basename "$1")"
-    git -C "${dir}" rev-parse --git-dir > /dev/null 2>&1 || {
+    git -C "${dir}" rev-parse --verify --quiet "${base}^{commit}" > /dev/null 2>&1 || {
+        ! git -C "${dir}" rev-parse --git-dir > /dev/null 2>&1 ||
+            usage_error "--base: no commit '${base}' in the repository of '$1'"
         echo "notice: '$1' is not in a Git repository: every finding is new" >&2
         return 0
     }
-    git -C "${dir}" rev-parse --verify --quiet "${base}^{commit}" > /dev/null ||
-        usage_error "--base: no commit '${base}' in the repository of '$1'"
     git -C "${dir}" cat-file -e "${base}:./${name}" 2> /dev/null || return 0
     git -C "${dir}" show "${base}:./${name}" > "${tmp}/document"
     # The base keeps its own status: --status is about the new version.
