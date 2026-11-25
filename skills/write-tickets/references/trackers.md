@@ -78,10 +78,12 @@ Tier limits, all (unverified):
 
 - The description is converted from Markdown to Atlassian Document Format: headings, lists, task
   lists, tables, quotes, rules, fenced code blocks, hard breaks, inline code, bold, links.
-  Hard-wrapped lines are joined, also one that starts with a number other than 1 (`13) to merge`)
-  when it is indented as the paragraph it continues. Above the first `## ` heading, a line that starts with a label
+  Hard-wrapped lines are joined. Above the first `## ` heading, a line that starts with a label
   (`Name: value`, `Name (team): value` or `**Name:** value`, with no indentation and a name of at
   most 31 characters) starts its own paragraph.
+- A line that starts with a number other than 1 (`13) to merge`) continues the paragraph above it.
+  Under a list item it must be indented as the text of the item, or it starts an item. A list that
+  starts at another number needs a blank line before it.
 - A change of list kind starts a new list. A block that its container cannot hold follows it, and
   the next items or lines start a new list or quote: a task item holds only text and task lists, a
   list item no table, quote or rule, a quote no table, task list or rule. A heading in a list item
@@ -89,9 +91,9 @@ Tier limits, all (unverified):
 - Not converted, the text is kept: indented code, underlined (`===`) headings, tables whose rows do
   not start with `|`, reference links and HTML are joined like a paragraph. A checkbox after a number
   (`1. [ ] a`) or without text (`- [ ]`) stays text. So does a heading, quote, table row or second
-  list marker after a list marker (`- # h`, `- > q`, `- | a | b |`, `- - a`), unless a fence opens on
-  that line; the quote or table rows below it become a separate block. A one-column table without a
-  closing pipe (`| a`) is joined like a paragraph.
+  list marker after a list marker (`- # h`, `- > q`, `- | a | b |`, `- - a`, but not `- - ` and a
+  fence); quote lines, table rows or items below it become a separate block. A one-column table
+  without a closing pipe (`| a`) is joined like a paragraph.
 - That Jira renders an ADF description sent through
   `--from-json` or `--description-file` is unverified: publish with `--max 1` first and check it.
 - `parentIssueId` is documented for sub-tasks. A project where Tasks cannot take an Epic parent
