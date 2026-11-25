@@ -76,8 +76,26 @@ Tier limits, all (unverified):
 | Labels | `labels` in the payload; no existence check: Jira creates a label on first use | (unverified) |
 | Issue key | `.key` of the JSON printed by `--json` | (unverified) |
 
-- The description is converted from Markdown to Atlassian Document Format (headings, lists, task
-  lists, tables, code, bold, links). That Jira renders an ADF description sent through
+- The description is converted from Markdown to Atlassian Document Format: headings, lists, task
+  lists, tables, quotes, rules, fenced code blocks, hard breaks, inline code, bold, links.
+  Hard-wrapped lines are joined. Above the first `## ` heading, a line that starts with a label
+  (`Name: value`, `Name (team): value` or `**Name:** value`, with no indentation and a name of at
+  most 31 characters) starts its own paragraph.
+- A line that starts with a number other than 1 (`13) to merge`) continues the paragraph above it.
+  Under a list item it must be indented as the text of the item, or it starts an item. A list that
+  starts at another number needs a blank line before it. A tab can indent the line, but nesting
+  compares characters: under an indented list, do not mix tabs and spaces.
+- A change of list kind starts a new list. A block that its container cannot hold follows it, and
+  the next items or lines start a new list or quote: a task item holds only text and task lists, a
+  list item no table, quote or rule, a quote no table, task list or rule. A heading in a list item
+  or a quote becomes a paragraph.
+- Not converted, the text is kept: indented code, underlined (`===`) headings, tables whose rows do
+  not start with `|`, reference links and HTML are joined like a paragraph. A checkbox after a number
+  (`1. [ ] a`) or without text (`- [ ]`) stays text. So does a heading, quote, table row or second
+  list marker after a list marker (`- # h`, `- > q`, `- | a | b |`, `- - a`, but not `- - ` and a
+  fence); quote lines, table rows or items below it become a separate block. A one-column table
+  without a closing pipe (`| a`) is joined like a paragraph.
+- That Jira renders an ADF description sent through
   `--from-json` or `--description-file` is unverified: publish with `--max 1` first and check it.
 - `parentIssueId` is documented for sub-tasks. A project where Tasks cannot take an Epic parent
   refuses it; some sites set the epic through an Epic Link custom field instead (unverified).
@@ -89,7 +107,7 @@ Tier limits, all (unverified):
   ([link mark](https://developer.atlassian.com/cloud/jira/platform/apis/document/marks/link/)),
   not an `inlineCard`, which Jira renders as a smart link card resolved from the URL
   ([inlineCard](https://developer.atlassian.com/cloud/jira/platform/apis/document/nodes/inlineCard/)).
-  Code spans and Markdown links are left as they are. Without `site`, the key stays plain text and
+  Code spans, fenced code blocks and Markdown links are left as they are. Without `site`, the key stays plain text and
   the script warns: whether Jira links a plain key in an ADF text node is (unverified), as the ADF
   reference does not say.
 
@@ -113,6 +131,8 @@ and `--apply` deletes it and creates it the right way round.
 - Jira has no conditional edit: a change made between the last read and the write of one issue is
   overwritten.
 - An issue published before `base-NN` rows existed is a conflict as soon as it differs from its draft.
+- A new version of the converter changes the description of an unchanged draft, so `--sync` lists it
+  as an edit, or as a conflict when the issue was edited on Jira since.
 - `--sync` writes the title and the description only. Labels, fields and the epic stay as they are.
 
 ### Jira config (`--config <file.json>`)

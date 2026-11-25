@@ -108,21 +108,15 @@ metadata:
 
 `mise run marketplace` copies it into the skill's plugin in `.claude-plugin/marketplace.json`, and
 Claude Code updates that plugin only when the version changes
-([version resolution](https://code.claude.com/docs/en/plugins/loading.md#versions-and-updates)). The
-version of `gs` ends with a hash of the skill names: it changes only when a skill is added, renamed
-or removed.
-
-The `gs:` prefix is the `name` in the root `.claude-plugin/plugin.json`, which every skill plugin
-shares ([entry name and manifest name](https://code.claude.com/docs/en/plugins/loading.md#entry-name-and-manifest-name)).
-That file must not set a `version`: it would override the version of every skill.
+([version resolution](https://code.claude.com/docs/en/plugins/loading.md#versions-and-updates)).
+The header of [`scripts/marketplace.sh`](scripts/marketplace.sh) explains the version of `gs` and the
+`gs:` prefix.
 
 Each skill plugin caches the whole repository, so a link to another skill resolves to that skill as
 it was when the linking skill was last updated.
 
-To bump a changed skill, run `mise run bump -- <skill>` (`--help` for the rules). It derives the
-level from the Conventional Commits that changed the skill since `origin/main`: `fix` is a patch,
-`feat(<skill>)` a minor, `!` or `BREAKING CHANGE` a major. `mise run lint` fails when a skill changed
-but its version did not rise.
+To bump a changed skill, run `mise run bump -- <skill>` (`--help` for the rules). `mise run lint`
+fails when a skill changed but its version did not rise.
 
 ## Credits
 

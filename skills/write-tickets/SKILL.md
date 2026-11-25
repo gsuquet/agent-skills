@@ -2,7 +2,7 @@
 name: write-tickets
 description: Break a plan, RFC, issue or the current conversation into vertical tickets with blocking edges, with an optional spec as their parent, publish them to GitHub, GitLab or Jira, and sync later changes. Use when the user asks for a spec, to break work into tickets or issues, or to change or check the links of tickets it published.
 metadata:
-  version: 0.2.0
+  version: 0.2.1
 ---
 
 # Write tickets
