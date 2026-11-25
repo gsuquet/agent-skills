@@ -261,7 +261,8 @@ def item_blocks(match, rest, ref):
     first = next((indent_of(x) for x in rest if x.strip() and indent_of(x) > start), 0)
     inner = []
     for line, code in zip(rest, in_fence([own if fence else ""] + rest)[1:]):
-        if not code and list_item(line) and indent_of(line) < width:
+        columns = len(line[:indent_of(line)].expandtabs(4))
+        if not code and list_item(line) and columns < width:
             inner.append("")  # not indented as the text of the item: it starts a list, whatever its number
         inner.append(dedent(line, width if fence else min(width, first)))
     if fence:

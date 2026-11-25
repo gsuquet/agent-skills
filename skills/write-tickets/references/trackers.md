@@ -83,7 +83,8 @@ Tier limits, all (unverified):
   most 31 characters) starts its own paragraph.
 - A line that starts with a number other than 1 (`13) to merge`) continues the paragraph above it.
   Under a list item it must be indented as the text of the item, or it starts an item. A list that
-  starts at another number needs a blank line before it.
+  starts at another number needs a blank line before it. A tab can indent the line, but nesting
+  compares characters: under an indented list, do not mix tabs and spaces.
 - A change of list kind starts a new list. A block that its container cannot hold follows it, and
   the next items or lines start a new list or quote: a task item holds only text and task lists, a
   list item no table, quote or rule, a quote no table, task list or rule. A heading in a list item
