@@ -372,10 +372,15 @@ def blocks(lines, ref=None, labels=False):
     return content
 
 
+def first_section(lines):
+    """The index of the first "## " line outside fenced code: the header of a draft ends there."""
+    return next((n for n, (x, code) in enumerate(zip(lines, in_fence(lines)))
+                 if x.startswith("## ") and not code), len(lines))
+
+
 def to_adf(lines, ref=None):
-    first_section = next((n for n, (x, code) in enumerate(zip(lines, in_fence(lines)))
-                          if x.startswith("## ") and not code), len(lines))
-    content = blocks(lines[:first_section], ref, labels=True) + blocks(lines[first_section:], ref)
+    header = first_section(lines)
+    content = blocks(lines[:header], ref, labels=True) + blocks(lines[header:], ref)
     return {"type": "doc", "version": 1, "content": content}
 
 
@@ -387,12 +392,9 @@ def session_refs(text, cfg):
     pattern = cfg.get("sessionRefs", cfg.get("stripRefs", SESSION_REFS))
     if not pattern:
         return []
-    kept, fenced = [], False
-    for line in text.splitlines():
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-        elif not fenced:
-            kept.append(re.sub(r"`[^`]+`|\]\([^)]+\)|\w+://\S+", " ", line))
+    lines = text.splitlines()
+    kept = [re.sub(r"`[^`]+`|\]\([^)]+\)|\w+://\S+", " ", line)
+            for line, code in zip(lines, in_fence(lines)) if not code]
     text = QUARTER.sub(" ", "\n".join(kept))
     return sorted({m.group(0) for m in re.finditer(rf"\b(?:{pattern})\b", text)})
 
@@ -433,10 +435,13 @@ def body_lines(path, cfg):
     drop = [re.compile(p) for p in cfg.get("dropLines", [])]
     kept = [line for line in lines if not any(p.search(line) for p in drop)]
     out, code = [], in_fence(kept)
+    atx = re.compile(r"(#{1,6})(?:\s|$)")  # not "#123 fixes it"
     for i, line in enumerate(kept):
-        if not code[i] and line.startswith("#"):
+        heading = not code[i] and atx.match(line)
+        if heading:
             nxt = next((x for x in kept[i + 1:] if x.strip()), None)
-            if nxt is None or nxt.startswith("#") and len(nxt.split()[0]) <= len(line.split()[0]):
+            below = nxt and atx.match(nxt)
+            if nxt is None or below and len(below.group(1)) <= len(heading.group(1)):
                 continue
         out.append(line)
     return lines, out
@@ -444,7 +449,7 @@ def body_lines(path, cfg):
 
 def ticket_labels(raw, title, cfg, extra):
     labels = list(cfg.get("labels", []))
-    header = raw[: next((i for i, x in enumerate(raw) if x.startswith("## ")), len(raw))]
+    header = raw[:first_section(raw)]
     for key in cfg.get("metaLabels", []):
         for line in header:
             m = re.search(rf"(?:^|·)\s*{re.escape(key)}:\s*([^·]+)", line)
@@ -486,19 +491,19 @@ def payload(args):
 
 def markdown_refs(path, ref):
     """The Markdown body with each "ticket NN" outside code and links replaced by ref(NN)."""
-    out, fenced, found = [], False, False
+    out, found = [], False
 
     def sub(m):
         nonlocal found
         found = True
         return NUM.sub(lambda n: ref(n.group(0)), m.group(1))
 
-    for line in Path(path).read_text().splitlines():
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-        if not fenced:
-            parts = INLINE.split(line)
-            line = "".join(x if x.startswith(("`", "[")) else REFS.sub(sub, x) for x in parts)
+    lines = Path(path).read_text().splitlines()
+    for line, code in zip(lines, in_fence(lines)):
+        if not code:
+            parts = INLINE.split(line)  # a code span or link is kept, not text that starts like one: "[x] done"
+            line = "".join(x if INLINE.fullmatch(x) and x.startswith(("`", "[")) else REFS.sub(sub, x)
+                           for x in parts)
         out.append(line)
     return "\n".join(out) + "\n" if found else ""
 
