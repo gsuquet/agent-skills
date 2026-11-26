@@ -387,12 +387,9 @@ def session_refs(text, cfg):
     pattern = cfg.get("sessionRefs", cfg.get("stripRefs", SESSION_REFS))
     if not pattern:
         return []
-    kept, fenced = [], False
-    for line in text.splitlines():
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-        elif not fenced:
-            kept.append(re.sub(r"`[^`]+`|\]\([^)]+\)|\w+://\S+", " ", line))
+    lines = text.splitlines()
+    kept = [re.sub(r"`[^`]+`|\]\([^)]+\)|\w+://\S+", " ", line)
+            for line, code in zip(lines, in_fence(lines)) if not code]
     text = QUARTER.sub(" ", "\n".join(kept))
     return sorted({m.group(0) for m in re.finditer(rf"\b(?:{pattern})\b", text)})
 
