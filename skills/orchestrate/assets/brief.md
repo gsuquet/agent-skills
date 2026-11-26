@@ -29,7 +29,9 @@ that has not seen this session: no "as discussed", no "the above".
 
 - Run Git only in the worktree below, with `git -C <worktree path>` or after a `cd` in the same command.
 - Never bypass a hook (`SKIP=`, `--no-verify`): when one fails, stop and report its full output.
-- <rule for the commands the agent runs: allowed tools, network, installs, pushes>
+- No push and no Git `--force` or `-f`, in the worktree and in every repository you create, a
+  scratch or bare one included: list a step that needs one under Requests.
+- <rule for the commands the agent runs: allowed tools, network, installs>
 
 ## Files you may and may not touch
 
