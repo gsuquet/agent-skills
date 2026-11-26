@@ -372,10 +372,15 @@ def blocks(lines, ref=None, labels=False):
     return content
 
 
+def first_section(lines):
+    """The index of the first "## " line outside fenced code: the header of a draft ends there."""
+    return next((n for n, (x, code) in enumerate(zip(lines, in_fence(lines)))
+                 if x.startswith("## ") and not code), len(lines))
+
+
 def to_adf(lines, ref=None):
-    first_section = next((n for n, (x, code) in enumerate(zip(lines, in_fence(lines)))
-                          if x.startswith("## ") and not code), len(lines))
-    content = blocks(lines[:first_section], ref, labels=True) + blocks(lines[first_section:], ref)
+    header = first_section(lines)
+    content = blocks(lines[:header], ref, labels=True) + blocks(lines[header:], ref)
     return {"type": "doc", "version": 1, "content": content}
 
 
@@ -444,7 +449,7 @@ def body_lines(path, cfg):
 
 def ticket_labels(raw, title, cfg, extra):
     labels = list(cfg.get("labels", []))
-    header = raw[: next((i for i, x in enumerate(raw) if x.startswith("## ")), len(raw))]
+    header = raw[:first_section(raw)]
     for key in cfg.get("metaLabels", []):
         for line in header:
             m = re.search(rf"(?:^|·)\s*{re.escape(key)}:\s*([^·]+)", line)
