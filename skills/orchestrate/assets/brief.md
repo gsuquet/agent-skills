@@ -27,10 +27,12 @@ that has not seen this session: no "as discussed", no "the above".
 
 ## Rules for your own commands
 
-- Run Git only in the worktree below, with `git -C <worktree path>` or after a `cd` in the same command.
+- Run Git only in the worktree below, with `git -C <worktree path>` or after a `cd` in the same
+  command, and in the scratch repositories that the next line allows.
+- Scratch repositories (bare ones included): <a folder outside the repository to create them in, or "none">.
 - Never bypass a hook (`SKIP=`, `--no-verify`): when one fails, stop and report its full output.
-- No push and no Git `--force` or `-f`, in the worktree and in every repository you create, a
-  scratch or bare one included: list a step that needs one under Requests.
+- No push and no Git `--force` or `-f`, in the worktree or in a scratch repository: list a step that
+  needs one under Requests.
 - <rule for the commands the agent runs: allowed tools, network, installs>
 
 ## Files you may and may not touch
