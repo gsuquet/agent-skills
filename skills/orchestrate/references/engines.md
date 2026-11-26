@@ -42,6 +42,19 @@ Taken from <https://antigravity.google/docs/dynamic-workflows>; the template has
 - The "Orchestrator" model (Neon, Carbon, Argon) is not a workflow engine: it pairs a planner and an
   executor model inside one agent. It changes nothing in this skill.
 
+## Wake timer
+
+Read this in step 6. The main session gets a turn only when the user writes or a background task
+ends, so a stalled agent goes unnoticed without a timer. Start one at the first launch, and again on
+each wake while a task runs.
+
+- Claude Code: run `sleep 900` with the Bash tool's `run_in_background`. The session gets a turn
+  when it exits. In an unattended session (`-p`, Agent SDK, cloud), a background command stops after
+  30 minutes by default, longer than the timer
+  (<https://code.claude.com/docs/en/tools-reference#background-commands>).
+- Antigravity (unverified): no wake mechanism was checked. Without one, check on quiet agents at each
+  user turn, and tell the user that the check runs only then.
+
 ## Subagents
 
 - Claude Code: the Agent tool, in the background; one per brief.
