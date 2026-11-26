@@ -431,9 +431,11 @@ def body_lines(path, cfg):
     kept = [line for line in lines if not any(p.search(line) for p in drop)]
     out, code = [], in_fence(kept)
     for i, line in enumerate(kept):
-        if not code[i] and line.startswith("#"):
+        heading = not code[i] and HEADING.match(line)
+        if heading:  # "#123 fixes it" is text, not a heading
             nxt = next((x for x in kept[i + 1:] if x.strip()), None)
-            if nxt is None or nxt.startswith("#") and len(nxt.split()[0]) <= len(line.split()[0]):
+            below = nxt and HEADING.match(nxt)
+            if nxt is None or below and len(below.group(1)) <= len(heading.group(1)):
                 continue
         out.append(line)
     return lines, out
