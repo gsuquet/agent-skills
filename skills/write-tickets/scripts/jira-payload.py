@@ -491,17 +491,16 @@ def payload(args):
 
 def markdown_refs(path, ref):
     """The Markdown body with each "ticket NN" outside code and links replaced by ref(NN)."""
-    out, fenced, found = [], False, False
+    out, found = [], False
 
     def sub(m):
         nonlocal found
         found = True
         return NUM.sub(lambda n: ref(n.group(0)), m.group(1))
 
-    for line in Path(path).read_text().splitlines():
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-        if not fenced:
+    lines = Path(path).read_text().splitlines()
+    for line, code in zip(lines, in_fence(lines)):
+        if not code:
             parts = INLINE.split(line)
             line = "".join(x if x.startswith(("`", "[")) else REFS.sub(sub, x) for x in parts)
         out.append(line)
