@@ -430,11 +430,12 @@ def body_lines(path, cfg):
     drop = [re.compile(p) for p in cfg.get("dropLines", [])]
     kept = [line for line in lines if not any(p.search(line) for p in drop)]
     out, code = [], in_fence(kept)
+    atx = re.compile(r"(#{1,6})(?:\s|$)")  # not "#123 fixes it"
     for i, line in enumerate(kept):
-        heading = not code[i] and HEADING.match(line)
-        if heading:  # "#123 fixes it" is text, not a heading
+        heading = not code[i] and atx.match(line)
+        if heading:
             nxt = next((x for x in kept[i + 1:] if x.strip()), None)
-            below = nxt and HEADING.match(nxt)
+            below = nxt and atx.match(nxt)
             if nxt is None or below and len(below.group(1)) <= len(heading.group(1)):
                 continue
         out.append(line)
