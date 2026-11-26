@@ -501,8 +501,9 @@ def markdown_refs(path, ref):
     lines = Path(path).read_text().splitlines()
     for line, code in zip(lines, in_fence(lines)):
         if not code:
-            parts = INLINE.split(line)
-            line = "".join(x if x.startswith(("`", "[")) else REFS.sub(sub, x) for x in parts)
+            parts = INLINE.split(line)  # a code span or link is kept, not text that starts like one: "[x] done"
+            line = "".join(x if INLINE.fullmatch(x) and x.startswith(("`", "[")) else REFS.sub(sub, x)
+                           for x in parts)
         out.append(line)
     return "\n".join(out) + "\n" if found else ""
 
