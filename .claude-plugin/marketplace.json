@@ -51,7 +51,7 @@
       "name": "orchestrate",
       "source": "./",
       "description": "Run a task from the main agent session as an orchestrator that settles the user's decisions, writes one brief per subagent, verifies each report independently and relays the results. Use when the user asks to orchestrate or delegate work to subagents, or when a task splits into independent parts too large for one session.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "skills": [
         "./skills/orchestrate"
       ]

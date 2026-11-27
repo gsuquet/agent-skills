@@ -2,7 +2,7 @@
 name: orchestrate
 description: Run a task from the main agent session as an orchestrator that settles the user's decisions, writes one brief per subagent, verifies each report independently and relays the results. Use when the user asks to orchestrate or delegate work to subagents, or when a task splits into independent parts too large for one session.
 metadata:
-  version: 0.2.0
+  version: 0.3.0
 ---
 
 # Orchestrate
@@ -31,7 +31,15 @@ reaches the user. Subagents own the implementation, the research and the reads a
    subagents, launch one per brief, in the background, with a prompt that says to read the brief
    file fully first and treat it as binding. Done when every task is launched.
 6. **Wait.** Answer the user and run only lookups of a few commands. Leave each delegated task, and
-   the files it works on, to its agent. Done when every task has sent its report.
+   the files it works on, to its agent. While a task runs, keep a 15-minute timer that wakes the
+   session: read [Wake timer](references/engines.md#wake-timer) to set it. On each wake, for each
+   agent with nothing new since the last wake (no output, commit or file change in its worktree),
+   read its last output when your agent tool shows it. Call the agent stuck only on evidence: its
+   last output shows a refused command or a wait for input, or it has not answered a status request
+   sent by message at the previous wake. When neither its output nor its files show progress, send
+   that status request. Stop a stuck agent, then resume it, or relaunch it from its brief, with a
+   message that names the refused action and the rule to follow instead (for example: read-only
+   commands). Done when every task has sent its report.
 7. **Verify.** For each report: save it to a file (a JSON report from a workflow: convert it with
    [scripts/report-to-md.sh](scripts/report-to-md.sh) `<json> > <file>`), run
    [scripts/check-report.sh](scripts/check-report.sh) `-C <worktree> <report> -- <check>`, with the
